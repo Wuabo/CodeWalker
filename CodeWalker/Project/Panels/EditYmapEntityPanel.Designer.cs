@@ -153,6 +153,8 @@
             this.EntityGeneralTabPage.Controls.Add(this.EntityPositionTextBox);
             this.EntityGeneralTabPage.Controls.Add(this.EntityGoToButton);
             this.EntityGeneralTabPage.Controls.Add(this.label17);
+            this.EntityGeneralTabPage.AutoScroll = true;
+            this.EntityGeneralTabPage.AutoScrollMinSize = new System.Drawing.Size(0, 430);
             this.EntityGeneralTabPage.Location = new System.Drawing.Point(4, 22);
             this.EntityGeneralTabPage.Name = "EntityGeneralTabPage";
             this.EntityGeneralTabPage.Padding = new System.Windows.Forms.Padding(3);
@@ -185,8 +187,7 @@
             // 
             // EntityFlagsCheckedListBox
             // 
-            this.EntityFlagsCheckedListBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Right)));
+            this.EntityFlagsCheckedListBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right))));
             this.EntityFlagsCheckedListBox.CheckOnClick = true;
             this.EntityFlagsCheckedListBox.FormattingEnabled = true;
             this.EntityFlagsCheckedListBox.Items.AddRange(new object[] {
@@ -224,7 +225,7 @@
             "2147483648 - Unused"});
             this.EntityFlagsCheckedListBox.Location = new System.Drawing.Point(298, 113);
             this.EntityFlagsCheckedListBox.Name = "EntityFlagsCheckedListBox";
-            this.EntityFlagsCheckedListBox.Size = new System.Drawing.Size(251, 289);
+            this.EntityFlagsCheckedListBox.Size = new System.Drawing.Size(251, 220);
             this.EntityFlagsCheckedListBox.TabIndex = 32;
             this.EntityFlagsCheckedListBox.ItemCheck += new System.Windows.Forms.ItemCheckEventHandler(this.EntityFlagsCheckedListBox_ItemCheck);
             // 
@@ -248,7 +249,8 @@
             // 
             // EntityHideButton
             // 
-            this.EntityHideButton.Location = new System.Drawing.Point(274, 371);
+            this.EntityHideButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.EntityHideButton.Location = new System.Drawing.Point(274, 355);
             this.EntityHideButton.Name = "EntityHideButton";
             this.EntityHideButton.Size = new System.Drawing.Size(95, 23);
             this.EntityHideButton.TabIndex = 34;
@@ -258,7 +260,8 @@
             // 
             // EntityDeleteButton
             // 
-            this.EntityDeleteButton.Location = new System.Drawing.Point(375, 371);
+            this.EntityDeleteButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.EntityDeleteButton.Location = new System.Drawing.Point(375, 355);
             this.EntityDeleteButton.Name = "EntityDeleteButton";
             this.EntityDeleteButton.Size = new System.Drawing.Size(95, 23);
             this.EntityDeleteButton.TabIndex = 35;
@@ -278,7 +281,8 @@
             // 
             // EntityAddToProjectButton
             // 
-            this.EntityAddToProjectButton.Location = new System.Drawing.Point(173, 371);
+            this.EntityAddToProjectButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.EntityAddToProjectButton.Location = new System.Drawing.Point(173, 355);
             this.EntityAddToProjectButton.Name = "EntityAddToProjectButton";
             this.EntityAddToProjectButton.Size = new System.Drawing.Size(95, 23);
             this.EntityAddToProjectButton.TabIndex = 33;
