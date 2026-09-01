@@ -36,6 +36,7 @@
             this.EntityFlagsCheckedListBox = new System.Windows.Forms.CheckedListBox();
             this.label13 = new System.Windows.Forms.Label();
             this.label28 = new System.Windows.Forms.Label();
+            this.EntityHideButton = new System.Windows.Forms.Button();
             this.EntityDeleteButton = new System.Windows.Forms.Button();
             this.EntityTintValueTextBox = new System.Windows.Forms.TextBox();
             this.EntityAddToProjectButton = new System.Windows.Forms.Button();
@@ -122,6 +123,7 @@
             this.EntityGeneralTabPage.Controls.Add(this.EntityFlagsCheckedListBox);
             this.EntityGeneralTabPage.Controls.Add(this.label13);
             this.EntityGeneralTabPage.Controls.Add(this.label28);
+            this.EntityGeneralTabPage.Controls.Add(this.EntityHideButton);
             this.EntityGeneralTabPage.Controls.Add(this.EntityDeleteButton);
             this.EntityGeneralTabPage.Controls.Add(this.EntityTintValueTextBox);
             this.EntityGeneralTabPage.Controls.Add(this.EntityAddToProjectButton);
@@ -244,12 +246,22 @@
             this.label28.TabIndex = 28;
             this.label28.Text = "TintValue:";
             // 
+            // EntityHideButton
+            // 
+            this.EntityHideButton.Location = new System.Drawing.Point(274, 371);
+            this.EntityHideButton.Name = "EntityHideButton";
+            this.EntityHideButton.Size = new System.Drawing.Size(95, 23);
+            this.EntityHideButton.TabIndex = 34;
+            this.EntityHideButton.Text = "Hide Entity";
+            this.EntityHideButton.UseVisualStyleBackColor = true;
+            this.EntityHideButton.Click += new System.EventHandler(this.EntityHideButton_Click);
+            // 
             // EntityDeleteButton
             // 
-            this.EntityDeleteButton.Location = new System.Drawing.Point(175, 371);
+            this.EntityDeleteButton.Location = new System.Drawing.Point(375, 371);
             this.EntityDeleteButton.Name = "EntityDeleteButton";
             this.EntityDeleteButton.Size = new System.Drawing.Size(95, 23);
-            this.EntityDeleteButton.TabIndex = 34;
+            this.EntityDeleteButton.TabIndex = 35;
             this.EntityDeleteButton.Text = "Delete Entity";
             this.EntityDeleteButton.UseVisualStyleBackColor = true;
             this.EntityDeleteButton.Click += new System.EventHandler(this.EntityDeleteButton_Click);
@@ -266,7 +278,7 @@
             // 
             // EntityAddToProjectButton
             // 
-            this.EntityAddToProjectButton.Location = new System.Drawing.Point(74, 371);
+            this.EntityAddToProjectButton.Location = new System.Drawing.Point(173, 371);
             this.EntityAddToProjectButton.Name = "EntityAddToProjectButton";
             this.EntityAddToProjectButton.Size = new System.Drawing.Size(95, 23);
             this.EntityAddToProjectButton.TabIndex = 33;
@@ -824,6 +836,7 @@
         private System.Windows.Forms.CheckedListBox EntityFlagsCheckedListBox;
         private System.Windows.Forms.Label label13;
         private System.Windows.Forms.Label label28;
+        private System.Windows.Forms.Button EntityHideButton;
         private System.Windows.Forms.Button EntityDeleteButton;
         private System.Windows.Forms.TextBox EntityTintValueTextBox;
         private System.Windows.Forms.Button EntityAddToProjectButton;

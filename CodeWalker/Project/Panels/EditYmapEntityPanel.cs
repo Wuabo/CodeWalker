@@ -660,6 +660,51 @@ namespace CodeWalker.Project.Panels
             ProjectForm.AddEntityToProject();
         }
 
+        private void EntityHideButton_Click(object sender, EventArgs e)
+        {
+            if (CurrentEntity == null) return;
+
+            lock (ProjectForm.ProjectSyncRoot)
+            {
+                var pos = CurrentEntity.Position;
+                pos.Z = -999.0f;
+                CurrentEntity.SetPositionRaw(pos);
+
+                var hiddenScale = new Vector3(0.0f, 0.0f, 0.0f);
+                CurrentEntity.SetScale(hiddenScale);
+
+                CurrentEntity._CEntityDef.lodDist = -1.0f;
+                CurrentEntity._CEntityDef.childLodDist = 0.0f;
+
+                if (CurrentMCEntity != null)
+                {
+                    CurrentMCEntity._Data.scaleXY = 0.0f;
+                    CurrentMCEntity._Data.scaleZ = 0.0f;
+                    CurrentMCEntity._Data.lodDist = -1.0f;
+                    CurrentMCEntity._Data.childLodDist = 0.0f;
+                }
+
+                ProjectItemChanged();
+                var wf = ProjectForm.WorldForm;
+                if (wf != null)
+                {
+                    wf.BeginInvoke(new Action(() =>
+                    {
+                        wf.SetWidgetPosition(CurrentEntity.WidgetPosition, true);
+                        wf.SetWidgetScale(hiddenScale, true);
+                    }));
+                }
+            }
+
+            populatingui = true;
+            EntityPositionTextBox.Text = FloatUtil.GetVector3String(CurrentEntity.Position);
+            EntityScaleXYTextBox.Text = FloatUtil.ToString(0.0f);
+            EntityScaleZTextBox.Text = FloatUtil.ToString(0.0f);
+            EntityLodDistTextBox.Text = FloatUtil.ToString(-1.0f);
+            EntityChildLodDistTextBox.Text = FloatUtil.ToString(0.0f);
+            populatingui = false;
+        }
+
         private void EntityDeleteButton_Click(object sender, EventArgs e)
         {
             ProjectForm.SetProjectItem(CurrentEntity);
