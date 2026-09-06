@@ -67,7 +67,7 @@ namespace CodeWalker.Rendering
         public float bumpiness;
         public float AlphaScale;
         public float HardAlphaBlend;
-        public float useTessellation;
+        public uint AlphaMode;
         public Vector4 detailSettings;
         public Vector3 specMapIntMask;
         public float specularIntensityMult;
@@ -504,7 +504,7 @@ namespace CodeWalker.Rendering
 
         public override bool SetInputLayout(DeviceContext context, VertexType type)
         {
-            InputLayout l;
+            InputLayout? l;
             if (layouts.TryGetValue(type, out l))
             {
                 SetVertexShader(context, type);
@@ -607,13 +607,13 @@ namespace CodeWalker.Rendering
 
         public override void SetGeomVars(DeviceContext context, RenderableGeometry geom)
         {
-            RenderableTexture texture = null;
-            RenderableTexture texture2 = null;
-            RenderableTexture tintpal = null;
-            RenderableTexture bumptex = null;
-            RenderableTexture spectex = null;
-            RenderableTexture detltex = null;
-            RenderableTexture heighttex = null;
+            RenderableTexture? texture = null;
+            RenderableTexture? texture2 = null;
+            RenderableTexture? tintpal = null;
+            RenderableTexture? bumptex = null;
+            RenderableTexture? spectex = null;
+            RenderableTexture? detltex = null;
+            RenderableTexture? heighttex = null;
             bool isdistmap = false;
 
             float tntpalind = 0.0f;
@@ -787,8 +787,9 @@ namespace CodeWalker.Rendering
             PSGeomVars.Vars.IsDistMap = isdistmap ? 1u : 0u;
             PSGeomVars.Vars.bumpiness = geom.bumpiness;
             PSGeomVars.Vars.AlphaScale = isdistmap ? 1.0f : AlphaScale;
-            PSGeomVars.Vars.HardAlphaBlend = 0.0f; //todo: cutouts flag!
-            PSGeomVars.Vars.useTessellation = 0.0f;
+            PSGeomVars.Vars.HardAlphaBlend = geom.HardAlphaBlend;
+            PSGeomVars.Vars.AlphaMode = MaterialAlpha.Mode(shaderFile.Hash, geom.DrawableGeom.Shader.RenderBucket);
+            if (PSGeomVars.Vars.AlphaMode == 3) PSGeomVars.Vars.IsDecal = 0;
             PSGeomVars.Vars.detailSettings = geom.detailSettings;
             PSGeomVars.Vars.specMapIntMask = geom.specMapIntMask;
             PSGeomVars.Vars.specularIntensityMult = SpecularEnable ? geom.specularIntensityMult : 0.0f;
@@ -956,7 +957,7 @@ namespace CodeWalker.Rendering
             PSGeomVars.Vars.bumpiness = 0;
             PSGeomVars.Vars.AlphaScale = 1;
             PSGeomVars.Vars.HardAlphaBlend = 0;
-            PSGeomVars.Vars.useTessellation = 0;
+            PSGeomVars.Vars.AlphaMode = 0;
             PSGeomVars.Vars.detailSettings = Vector4.Zero;
             PSGeomVars.Vars.specMapIntMask = Vector3.Zero;
             PSGeomVars.Vars.specularIntensityMult = 1.0f;

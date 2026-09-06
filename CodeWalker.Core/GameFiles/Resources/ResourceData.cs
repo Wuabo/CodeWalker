@@ -30,6 +30,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CodeWalker.GameFiles
@@ -79,14 +80,14 @@ namespace CodeWalker.GameFiles
         /// Initializes a new resource data reader for the specified system- and graphics-stream.
         /// </summary>
         public ResourceDataReader(Stream systemStream, Stream graphicsStream, Endianess endianess = Endianess.LittleEndian)
-            : base((Stream)null, endianess)
+            : base((Stream?)null, endianess)
         {
             this.systemStream = systemStream;
             this.graphicsStream = graphicsStream;
         }
 
         public ResourceDataReader(RpfResourceFileEntry resentry, byte[] data, Endianess endianess = Endianess.LittleEndian)
-            : base((Stream)null, endianess)
+            : base((Stream?)null, endianess)
         {
             FileEntry = resentry;
             var systemSize = resentry.SystemSize;
@@ -111,7 +112,7 @@ namespace CodeWalker.GameFiles
         }
 
         public ResourceDataReader(int systemSize, int graphicsSize, byte[] data, Endianess endianess = Endianess.LittleEndian)
-            : base((Stream)null, endianess)
+            : base((Stream?)null, endianess)
         {
             this.systemStream = new MemoryStream(data, 0, systemSize);
             this.graphicsStream = new MemoryStream(data, systemSize, graphicsSize);
@@ -121,49 +122,69 @@ namespace CodeWalker.GameFiles
 
 
         /// <summary>
-        /// Reads data from the underlying stream. This is the only method that directly accesses
-        /// the data in the underlying stream.
+        /// Reads resource data through the shared span-based stream routing.
         /// </summary>
         protected override byte[] ReadFromStream(int count, bool ignoreEndianess = false)
         {
+            return base.ReadFromStream(count, ignoreEndianess);
+        }
+
+        private Stream GetReadStream(out long addressBase)
+        {
+            Stream stream;
             if ((Position & SYSTEM_BASE) == SYSTEM_BASE)
             {
-                // read from system stream...
-
-                systemStream.Position = Position & ~0x50000000;
-
-                var buffer = new byte[count];
-                systemStream.Read(buffer, 0, count);
-
-                // handle endianess
-                if (!ignoreEndianess && (Endianess == Endianess.BigEndian))
-                {
-                    Array.Reverse(buffer);
-                }
-
-                Position = systemStream.Position | 0x50000000;
-                return buffer;
-
+                addressBase = SYSTEM_BASE;
+                stream = systemStream;
             }
-            if ((Position & GRAPHICS_BASE) == GRAPHICS_BASE)
+            else if ((Position & GRAPHICS_BASE) == GRAPHICS_BASE)
             {
-                // read from graphic stream...
-
-                graphicsStream.Position = Position & ~0x60000000;
-
-                var buffer = new byte[count];
-                graphicsStream.Read(buffer, 0, count);
-
-                // handle endianess
-                if (!ignoreEndianess && (Endianess == Endianess.BigEndian))
-                {
-                    Array.Reverse(buffer);
-                }
-
-                Position = graphicsStream.Position | 0x60000000;
-                return buffer;
+                addressBase = GRAPHICS_BASE;
+                stream = graphicsStream;
             }
-            throw new Exception("illegal position!");
+            else
+            {
+                throw new InvalidDataException($"Illegal resource position: 0x{Position:X}.");
+            }
+
+            stream.Position = Position & ~addressBase;
+            return stream;
+        }
+
+        protected override void ReadFromStream(Span<byte> buffer, bool ignoreEndianess = false)
+        {
+            var stream = GetReadStream(out var addressBase);
+            try
+            {
+                stream.ReadExactly(buffer);
+            }
+            finally
+            {
+                Position = stream.Position | addressBase;
+            }
+            if (!ignoreEndianess && Endianess == Endianess.BigEndian)
+            {
+                buffer.Reverse();
+            }
+        }
+
+        protected override async ValueTask ReadFromStreamAsync(Memory<byte> buffer,
+            bool ignoreEndianess, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stream = GetReadStream(out var addressBase);
+            try
+            {
+                await stream.ReadExactlyAsync(buffer, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                Position = stream.Position | addressBase;
+            }
+            if (!ignoreEndianess && Endianess == Endianess.BigEndian)
+            {
+                buffer.Span.Reverse();
+            }
         }
 
         /// <summary>
@@ -176,9 +197,8 @@ namespace CodeWalker.GameFiles
             {
                 // make sure to return the same object if the same
                 // block is read again...
-                if (blockPool.ContainsKey(Position))
+                if (blockPool.TryGetValue(Position, out var block))
                 {
-                    var block = blockPool[Position];
                     if (block is T tblk)
                     {
                         Position += block.BlockLength;
@@ -236,7 +256,7 @@ namespace CodeWalker.GameFiles
             }
         }
 
-        public T[] ReadBlocks<T>(ulong[] pointers) where T : IResourceBlock, new()
+        public T[] ReadBlocks<T>(ulong[]? pointers) where T : IResourceBlock, new()
         {
             if (pointers == null) return null;
             var count = pointers.Length;
@@ -490,7 +510,7 @@ namespace CodeWalker.GameFiles
         /// Initializes a new resource data reader for the specified system- and graphics-stream.
         /// </summary>
         public ResourceDataWriter(Stream systemStream, Stream graphicsStream, Endianess endianess = Endianess.LittleEndian)
-            : base((Stream)null, endianess)
+            : base((Stream?)null, endianess)
         {
             this.systemStream = systemStream;
             this.graphicsStream = graphicsStream;
@@ -570,7 +590,7 @@ namespace CodeWalker.GameFiles
             Marshal.FreeHGlobal(ptr);
             Write(arr);
         }
-        public void WriteStructs<T>(T[] val) where T : struct
+        public void WriteStructs<T>(T[]? val) where T : struct
         {
             if (val == null) return;
             foreach (var v in val)
@@ -591,7 +611,7 @@ namespace CodeWalker.GameFiles
             if (pad > 0) Write(new byte[pad]);
         }
 
-        public void WriteUlongs(ulong[] val)
+        public void WriteUlongs(ulong[]? val)
         {
             if (val == null) return;
             foreach (var v in val)

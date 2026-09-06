@@ -50,6 +50,7 @@ namespace CodeWalker.Rendering
         public uint IsDecal;
         public uint EnableWind;
         public Vector4 WindOverrideParams;
+        public Vector4 AlphaParams;
     }
 
     public class ShadowShader : Shader, IDisposable
@@ -181,7 +182,7 @@ namespace CodeWalker.Rendering
 
         public override bool SetInputLayout(DeviceContext context, VertexType type)
         {
-            InputLayout l;
+            InputLayout? l;
             if (layouts.TryGetValue(type, out l))
             {
                 VertexShader vs = shadowvs;
@@ -258,7 +259,7 @@ namespace CodeWalker.Rendering
 
         public override void SetGeomVars(DeviceContext context, RenderableGeometry geom)
         {
-            RenderableTexture texture = null; // ((geom.Textures != null) && (geom.Textures.Length > 0)) ? geom.Textures[0] : null;
+            RenderableTexture? texture = null; // ((geom.Textures != null) && (geom.Textures.Length > 0)) ? geom.Textures[0] : null;
             //RenderableTexture tintpal = null;
 
             //float tntpalind = 0.0f;
@@ -268,6 +269,11 @@ namespace CodeWalker.Rendering
                 for (int i = 0; i < geom.RenderableTextures.Length; i++)
                 {
                     var itex = geom.RenderableTextures[i];
+                    if (geom.HDTextureEnable)
+                    {
+                        var hdtex = geom.RenderableTexturesHD[i];
+                        if (hdtex?.IsLoaded == true) itex = hdtex;
+                    }
                     var ihash = geom.TextureParamHashes[i];
                     switch (ihash)
                     {
@@ -356,6 +362,8 @@ namespace CodeWalker.Rendering
             GeomVars.Vars.EnableTint = tintflag;// usetint ? 1u : 0u;
             GeomVars.Vars.IsDecal = 0u;// DecalMode ? 1u : 0u;
             GeomVars.Vars.EnableWind = windflag;
+            GeomVars.Vars.AlphaParams = new Vector4(
+                MaterialAlpha.Mode(shaderFile.Hash, geom.DrawableGeom.Shader.RenderBucket), geom.HardAlphaBlend, 0, 0);
             GeomVars.Vars.WindOverrideParams = geom.WindOverrideParams;
             GeomVars.Update(context);
             GeomVars.SetPSCBuffer(context, 0);

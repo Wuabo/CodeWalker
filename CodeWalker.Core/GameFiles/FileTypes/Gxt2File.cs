@@ -172,7 +172,7 @@ namespace CodeWalker.GameFiles
     public static class GlobalText
     {
         public static Dictionary<uint, string> Index = new();
-        private static object syncRoot = new object();
+        private static readonly System.Threading.Lock syncRoot = new();
 
         public static volatile bool FullIndexBuilt = false;
 
@@ -190,13 +190,8 @@ namespace CodeWalker.GameFiles
             if (hash == 0) return true;
             lock (syncRoot)
             {
-                if (!Index.ContainsKey(hash))
-                {
-                    Index.Add(hash, str);
-                    return false;
-                }
+                return !Index.TryAdd(hash, str);
             }
-            return true;
         }
 
         public static bool Ensure(string str, uint hash)
@@ -204,18 +199,13 @@ namespace CodeWalker.GameFiles
             if (hash == 0) return true;
             lock (syncRoot)
             {
-                if (!Index.ContainsKey(hash))
-                {
-                    Index.Add(hash, str);
-                    return false;
-                }
+                return !Index.TryAdd(hash, str);
             }
-            return true;
         }
 
         public static string GetString(uint hash)
         {
-            string res;
+            string? res;
             lock (syncRoot)
             {
                 if (!Index.TryGetValue(hash, out res))
@@ -227,7 +217,7 @@ namespace CodeWalker.GameFiles
         }
         public static string TryGetString(uint hash)
         {
-            string res;
+            string? res;
             lock (syncRoot)
             {
                 if (!Index.TryGetValue(hash, out res))

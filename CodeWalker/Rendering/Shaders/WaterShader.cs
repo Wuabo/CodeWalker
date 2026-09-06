@@ -222,7 +222,7 @@ namespace CodeWalker.Rendering
 
         public override bool SetInputLayout(DeviceContext context, VertexType type)
         {
-            InputLayout l;
+            InputLayout? l;
             if (layouts.TryGetValue(type, out l))
             {
                 SetVertexShader(context, type);
@@ -338,11 +338,11 @@ namespace CodeWalker.Rendering
 
         public override void SetGeomVars(DeviceContext context, RenderableGeometry geom)
         {
-            RenderableTexture texture = null;
-            RenderableTexture bumptex = null;
-            RenderableTexture flowtex = null;
-            RenderableTexture foamtex = null;
-            RenderableTexture fogtex = null;
+            RenderableTexture? texture = null;
+            RenderableTexture? bumptex = null;
+            RenderableTexture? flowtex = null;
+            RenderableTexture? foamtex = null;
+            RenderableTexture? fogtex = null;
 
             if ((geom.RenderableTextures != null) && (geom.RenderableTextures.Length > 0))
             {
@@ -427,7 +427,7 @@ namespace CodeWalker.Rendering
             PSGeomVars.Vars.EnableFoamMap = usefoam ? 1u : 0u;
             PSGeomVars.Vars.ShaderMode = shaderMode;
             PSGeomVars.Vars.SpecularIntensity = SpecularEnable ? 1.0f : 0.0f;// geom.specularIntensityMult;
-            PSGeomVars.Vars.SpecularFalloff = 1.0f;// geom.specularFalloffMult;
+            PSGeomVars.Vars.SpecularFalloff = 128.0f; // shared forward/deferred water highlight
             PSGeomVars.Vars.WaveOffset = geom.WaveOffset; //for terrainfoam
             PSGeomVars.Vars.WaterHeight = geom.WaterHeight; //for terrainfoam
             PSGeomVars.Vars.WaveMovement = geom.WaveMovement; //for terrainfoam
