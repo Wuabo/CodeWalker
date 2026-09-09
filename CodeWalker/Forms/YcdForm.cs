@@ -157,7 +157,7 @@ namespace CodeWalker.Forms
                 {
                     if (ame != null)
                     {
-                        var lvi = MainListView.Items.Add(ame.Hash.ToString());
+                        var lvi = MainListView.Items.Add(ycd.GetAnimationName(ame));
                         lvi.Tag = ame.Animation;
                         lvi.Group = MainListView.Groups["Anims"];
                     }

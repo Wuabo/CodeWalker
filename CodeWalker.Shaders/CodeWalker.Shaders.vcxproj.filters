@@ -151,7 +151,9 @@
     <FxCompile Include="PPCopyPixelsPS.hlsl">
       <Filter>PostProcessor</Filter>
     </FxCompile>
-    <FxCompile Include="WorldAtmospherePS.hlsl"><Filter>PostProcessor</Filter></FxCompile>
+    <FxCompile Include="WorldAtmospherePS.hlsl">
+      <Filter>PostProcessor</Filter>
+    </FxCompile>
     <FxCompile Include="PPFinalPassPS.hlsl">
       <Filter>PostProcessor</Filter>
     </FxCompile>
@@ -272,6 +274,11 @@
     <FxCompile Include="LightPS_MS.hlsl">
       <Filter>Lights</Filter>
     </FxCompile>
+    <FxCompile Include="ParticlePS.hlsl" />
+    <FxCompile Include="ParticleVS.hlsl" />
+    <FxCompile Include="GrassFurVS.hlsl" />
+    <FxCompile Include="GrassFurPS.hlsl" />
+    <FxCompile Include="GrassFurPS_Deferred.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="BasicPS.hlsli">
@@ -292,7 +299,9 @@
     <None Include="Common.hlsli">
       <Filter>Common</Filter>
     </None>
-    <None Include="MaterialAlpha.hlsli"><Filter>Common</Filter></None>
+    <None Include="MaterialAlpha.hlsli">
+      <Filter>Common</Filter>
+    </None>
     <None Include="MaterialLighting.hlsli">
       <Filter>Common</Filter>
     </None>
@@ -323,6 +332,7 @@
     <None Include="LightPS.hlsli">
       <Filter>Lights</Filter>
     </None>
+    <None Include="GrassFur.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Basic">

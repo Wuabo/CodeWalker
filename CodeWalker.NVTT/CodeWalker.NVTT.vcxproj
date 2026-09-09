@@ -22,14 +22,14 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CLRSupport>NetCore</CLRSupport>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CLRSupport>NetCore</CLRSupport>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -74,8 +74,8 @@
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\nvtt30205.dll" "$(OutDir)"
-xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\cudart64_120.dll" "$(OutDir)" 2>nul
-xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\FreeImage.dll" "$(OutDir)" 2>nul</Command>
+xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\cudart64_120.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\FreeImage.dll" "$(OutDir)" 2&gt;nul</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -99,8 +99,8 @@ xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\FreeImage.dll
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\nvtt30205.dll" "$(OutDir)"
-xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\cudart64_120.dll" "$(OutDir)" 2>nul
-xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\FreeImage.dll" "$(OutDir)" 2>nul</Command>
+xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\cudart64_120.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y "C:\Program Files\NVIDIA Corporation\NVIDIA Texture Tools\FreeImage.dll" "$(OutDir)" 2&gt;nul</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

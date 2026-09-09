@@ -79,6 +79,33 @@ namespace CodeWalker.GameFiles
 
         }
 
+        public string GetAnimationName(AnimationMapEntry entry)
+        {
+            var name = JenkIndex.TryGetString(entry.Hash);
+            if (!string.IsNullOrEmpty(name)) return name;
+
+            foreach (var cme in ClipMap.Values)
+            {
+                var clip = cme.Clip;
+                if (clip is ClipAnimation clipAnimation && clipAnimation.Animation?.Hash == entry.Hash)
+                {
+                    return clip.ShortName;
+                }
+
+                if (clip is ClipAnimationList clipAnimationList)
+                {
+                    var animation = clipAnimationList.Animations?.Data?
+                        .FirstOrDefault(item => item?.Animation?.Hash == entry.Hash);
+                    if (animation != null)
+                    {
+                        return clip.ShortName;
+                    }
+                }
+            }
+
+            return JenkIndex.GetString(entry.Hash);
+        }
+
         public void BuildCutsceneMap(int cutIndex)
         {
             CutsceneMap = new Dictionary<MetaHash, ClipMapEntry>();

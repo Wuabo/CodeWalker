@@ -44,6 +44,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\nametables\**\*" Link="nametables\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Update="Properties\Settings.Designer.cs">
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
       <AutoGen>True</AutoGen>

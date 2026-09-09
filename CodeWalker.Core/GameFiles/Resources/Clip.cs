@@ -181,6 +181,21 @@ namespace CodeWalker.GameFiles
 
                 var name = clip.ShortName; //just to make sure ShortName is generated and in JenkIndex...
 
+                if (clip is ClipAnimation clipAnimation && clipAnimation.Animation != null)
+                {
+                    JenkIndex.Ensure(clipAnimation.Animation.Hash, name);
+                }
+                else if (clip is ClipAnimationList clipAnimationList)
+                {
+                    foreach (var animation in clipAnimationList.Animations?.Data ?? [])
+                    {
+                        if (animation?.Animation != null)
+                        {
+                            JenkIndex.Ensure(animation.Animation.Hash, name);
+                        }
+                    }
+                }
+
                 //if (name.EndsWith("_uv_0")) //hash for these entries match string with this removed, +1
                 //{
                 //}
@@ -623,7 +638,7 @@ namespace CodeWalker.GameFiles
 
         public override string ToString()
         {
-            return Hash.ToString();
+            return JenkIndex.GetString(Hash);
         }
 
     }

@@ -693,24 +693,11 @@ namespace CodeWalker.GameFiles
                                     byte[]? data = file.ExtractFile(binfe);
                                     if (data != null)
                                     {
-                                        sb.Clear();
-                                        for (int i = 0; i < data.Length; i++)
+                                        foreach (var str in Encoding.UTF8.GetString(data).Split('\0'))
                                         {
-                                            byte c = data[i];
-                                            if (c == 0)
+                                            if (!string.IsNullOrEmpty(str))
                                             {
-                                                string str = sb.ToString();
-                                                if (!string.IsNullOrEmpty(str))
-                                                {
-                                                    string strl = str.ToLowerInvariant();
-                                                    //Ens(str);
-                                                    Ens(strl);
-                                                }
-                                                sb.Clear();
-                                            }
-                                            else
-                                            {
-                                                sb.Append((char)c);
+                                                Ens(str.ToLowerInvariant());
                                             }
                                         }
                                     }
@@ -780,6 +767,36 @@ namespace CodeWalker.GameFiles
                     if (string.IsNullOrEmpty(str)) continue;
                     if (str.StartsWith("//")) continue;
                     JenkIndex.Ensure(str);
+                }
+            }
+
+            var nametableDirectories = new[]
+            {
+                Path.Combine(dir, "nametables"),
+                Path.Combine(AppContext.BaseDirectory, "nametables")
+            }.Distinct(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var nametableDirectory in nametableDirectories)
+            {
+                if (!Directory.Exists(nametableDirectory)) continue;
+
+                foreach (var nametablePath in Directory.EnumerateFiles(nametableDirectory, "*.nametable", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        foreach (var nametableEntry in Encoding.UTF8.GetString(File.ReadAllBytes(nametablePath)).Split('\0'))
+                        {
+                            var name = nametableEntry.Trim();
+                            if (!string.IsNullOrEmpty(name))
+                            {
+                                JenkIndex.Ensure(name.ToLowerInvariant());
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore an invalid optional nametable and continue loading the index.
+                    }
                 }
             }
 
