@@ -64,6 +64,19 @@ public class Camera(float smoothness, float sensitivity, float fov)
             FollowEntity = e;
         }
 
+        private (Vector3 Position, Quaternion Rotation)? AuthoredPose;
+
+        // A one-frame override: free-camera controls resume when the caller stops supplying poses.
+        public void SetAuthoredPose(Vector3 position, Quaternion rotation)
+        {
+            lock (syncRoot) AuthoredPose = (position, Quaternion.Normalize(rotation));
+        }
+
+        public void ClearAuthoredPose()
+        {
+            lock (syncRoot) AuthoredPose = null;
+        }
+
         public void Update(float elapsed)
         {
             lock (syncRoot)
@@ -116,7 +129,15 @@ public class Camera(float smoothness, float sensitivity, float fov)
 
 
 
-            if (IsMapView)
+            if (AuthoredPose is { } pose)
+            {
+                AuthoredPose = null;
+                Position = pose.Position;
+                LocalLookAt = Vector3.Zero;
+                ViewDirection = pose.Rotation.Multiply(Vector3.UnitZ);
+                UpDirection = pose.Rotation.Multiply(Vector3.UnitY);
+            }
+            else if (IsMapView)
             {
                 //in map view, need a constant view matrix aligned to XY.
 

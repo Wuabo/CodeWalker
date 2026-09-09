@@ -313,9 +313,9 @@ namespace CodeWalker.GameFiles
         {
             var cnode = node.SelectSingleNode(childName);
             if (cnode == null) return [];
-            var items = cnode.SelectNodes("Item")?.Cast<XmlNode>().ToArray() ?? [];
+            var items = cnode.SelectNodes("Item");
             if (items == null) return [];
-            getStringArrayList.Clear();
+            List<string> getStringArrayList = new();
             foreach (XmlNode inode in items)
             {
                 var istr = inode.InnerText;
@@ -329,16 +329,15 @@ namespace CodeWalker.GameFiles
         }
         private string[] GetStringArray(XmlNode node, string childName, char delimiter)
         {
-            var ldastr = Xml.GetChildInnerText(node, childName);
-            var ldarr = ldastr?.Split(delimiter);
-            if (ldarr == null) return [];
-            getStringArrayList.Clear();
-            foreach (var ldstr in ldarr)
+            var text = Xml.GetChildInnerText(node, childName).AsSpan();
+            if (text.IsEmpty) return [];
+            List<string> getStringArrayList = new();
+            foreach (var range in text.Split(delimiter))
             {
-                var ldt = ldstr?.Trim();
-                if (!string.IsNullOrEmpty(ldt))
+                var ldt = text[range].Trim();
+                if (!ldt.IsEmpty)
                 {
-                    getStringArrayList.Add(ldt);
+                    getStringArrayList.Add(ldt.ToString());
                 }
             }
             if (getStringArrayList.Count == 0) return [];
@@ -346,14 +345,13 @@ namespace CodeWalker.GameFiles
         }
         private float[] GetFloatArray(XmlNode node, string childName, char delimiter)
         {
-            var ldastr = Xml.GetChildInnerText(node, childName);
-            var ldarr = ldastr?.Split(delimiter);
-            if (ldarr == null) return [];
-            getFloatArrayList.Clear();
-            foreach (var ldstr in ldarr)
+            var text = Xml.GetChildInnerText(node, childName).AsSpan();
+            if (text.IsEmpty) return [];
+            List<float> getFloatArrayList = new();
+            foreach (var range in text.Split(delimiter))
             {
-                var ldt = ldstr?.Trim();
-                if (!string.IsNullOrEmpty(ldt))
+                var ldt = text[range].Trim();
+                if (!ldt.IsEmpty)
                 {
                     float f;
                     if (FloatUtil.TryParse(ldt, out f))
@@ -366,8 +364,6 @@ namespace CodeWalker.GameFiles
             return getFloatArrayList.ToArray();
         }
 
-        private static List<string> getStringArrayList = new(); //kinda hacky..
-        private static List<float> getFloatArrayList = new(); //kinda hacky..
 
 
         public override string ToString()

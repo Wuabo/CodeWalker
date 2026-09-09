@@ -29,6 +29,7 @@ namespace CodeWalker.World
         public RpfFileEntry[] TextureFiles { get; set; } = [];
         public RpfFileEntry[] ClothFiles { get; set; } = [];
         public ClipMapEntry? AnimClip { get; set; }
+        public ClipMapEntry? FaceAnimClip { get; set; }
         public Expression? Expression { get; set; }
         public string?[] DrawableNames { get; set; } = new string?[12];
         public Drawable?[] Drawables { get; set; } = new Drawable?[12];
@@ -49,7 +50,7 @@ namespace CodeWalker.World
 
         public void Init(string name, GameFileCache gfc)
         {
-            var hash = JenkHash.GenHash(name.ToLowerInvariant());
+            var hash = JenkHash.GenHashLowerInvariant(name);
             Init(hash, gfc);
             Name = name;
         }
@@ -61,7 +62,7 @@ namespace CodeWalker.World
 
         public async Task InitAsync(string name, GameFileCache gfc)
         {
-            var hash = JenkHash.GenHash(name.ToLowerInvariant());
+            var hash = JenkHash.GenHashLowerInvariant(name);
             await InitAsync(hash, gfc);
             Name = name;
         }
@@ -81,6 +82,7 @@ namespace CodeWalker.World
             Yft = null;
             Ymt = null;
             AnimClip = null;
+            FaceAnimClip = null;
             for (int i = 0; i < 12; i++)
             {
                 Drawables[i] = null;
@@ -96,8 +98,8 @@ namespace CodeWalker.World
                 return;
             }
 
-            var ycdhash = JenkHash.GenHash(initdata.ClipDictionaryName.ToLowerInvariant());
-            var yedhash = JenkHash.GenHash(initdata.ExpressionDictionaryName.ToLowerInvariant());
+            var ycdhash = JenkHash.GenHashLowerInvariant(initdata.ClipDictionaryName);
+            var yedhash = JenkHash.GenHashLowerInvariant(initdata.ExpressionDictionaryName);
 
             NameHash = pedhash;
             InitData = initdata;
@@ -140,7 +142,7 @@ namespace CodeWalker.World
             Ycd?.ClipMap?.TryGetValue(cliphash, out cme);
             AnimClip = cme;
 
-            var exprhash = JenkHash.GenHash(initdata.ExpressionName.ToLowerInvariant());
+            var exprhash = JenkHash.GenHashLowerInvariant(initdata.ExpressionName);
             Expression? expr = null;
             Yed?.ExprMap?.TryGetValue(exprhash, out expr);
             Expression = expr;
@@ -207,8 +209,8 @@ namespace CodeWalker.World
                 return;
             }
 
-            MetaHash namehash = JenkHash.GenHash(name.ToLowerInvariant());
-            MetaHash texhash = JenkHash.GenHash(tex?.ToLowerInvariant() ?? string.Empty);
+            MetaHash namehash = JenkHash.GenHashLowerInvariant(name);
+            MetaHash texhash = JenkHash.GenHashLowerInvariant(tex);
 
             // Start loading all required files in parallel
             YddFile? yddFile = null;
@@ -301,7 +303,13 @@ namespace CodeWalker.World
                 Yed.ExprMap.TryGetValue(namehash, out e);
             }
 
-            if (d != null) Drawables[index] = d.ShallowCopy() as Drawable;
+            if (d != null)
+            {
+                var component = d.ShallowCopy() as Drawable;
+                // Binding a pose must not mutate a cached drawable or another actor's palette.
+                if (component != null) component.Skeleton = (d.Skeleton ?? Skeleton)?.Clone();
+                Drawables[index] = component;
+            }
             if (t != null) Textures[index] = t;
             if (c != null) Clothes[index] = c;
             if (e != null) Expressions[index] = e;

@@ -280,9 +280,12 @@ namespace CodeWalker.Rendering
         }
 
 
+        private readonly InteriorLighting interiorLighting = new();
+
         public void BeginRender(DeviceContext ctx)
         {
             context = ctx;
+            interiorLighting.Reset();
 
             dxman.ClearRenderTarget(context);
 
@@ -323,13 +326,34 @@ namespace CodeWalker.Rendering
 
         public void RenderQueued()
         {
+            // Start from weather every frame so leaving a room cannot retain its lighting.
+            UpdateGlobalLights();
+            if (!controllightdir && renderartificialambientlight)
+                interiorLighting.Apply(globalLights, weather.CurrentValues, weather.TimecycleMods?.Dict, shaders.hdr);
+            shaders.SetGlobalLightParams(globalLights);
             shaders.RenderQueued(context, camera, currentWindVec);
 
             RenderSkeletons();
         }
 
+        public CodeWalker.World.CutsceneDepthOfField? CutsceneDepthOfField { get; set; }
+
+        public void RenderCutsceneLight(RenderableLight light, Vector3 position, Quaternion rotation)
+        {
+            if (renderlights && shaders.deferred)
+            {
+                var instance = new RenderableLightInst { Light = light, EntityPosition = position, EntityRotation = rotation };
+                shaders.Enqueue(ref instance);
+            }
+        }
+
         public void RenderFinalPass()
         {
+            if (shaders.HDR != null)
+            {
+                shaders.HDR.DepthOfField = CutsceneDepthOfField;
+                shaders.HDR.DepthProjection = new Vector2(camera.ProjMatrix.M33, camera.ProjMatrix.M43);
+            }
             shaders.RenderFinalPass(context);
         }
 
@@ -494,6 +518,8 @@ namespace CodeWalker.Rendering
 
             if (controllightdir)
             {
+                globalLights.InteriorAmbientUp = Color4.Black;
+                globalLights.InteriorAmbientDown = Color4.Black;
                 float cryd = (float)Math.Cos(lightdiry);
                 lightdir.X = -(float)Math.Sin(-lightdirx) * cryd;
                 lightdir.Y = -(float)Math.Cos(-lightdirx) * cryd;
@@ -514,6 +540,8 @@ namespace CodeWalker.Rendering
             else
             {
                 var frame = WorldLighting.Evaluate(timecycle, weather.CurrentValues, timeofday, hdr, swaphemisphere);
+                globalLights.InteriorAmbientUp = renderartificialambientlight ? frame.InteriorUp : Color4.Black;
+                globalLights.InteriorAmbientDown = renderartificialambientlight ? frame.InteriorDown : Color4.Black;
                 lightdir = frame.Parameters.LightDir;
                 lightdircolour = frame.Parameters.LightDirColour;
                 lightdirambcolour = frame.Parameters.LightDirAmbColour;
@@ -1799,7 +1827,7 @@ namespace CodeWalker.Rendering
                 for (int i = 0; i < frag.Layers.Length; i++)
                 {
                     CloudHatFragLayer layer = frag.Layers[i];
-                    uint dhash = JenkHash.GenHash(layer.Filename.ToLowerInvariant());
+                    uint dhash = JenkHash.GenHashLowerInvariant(layer.Filename);
                     var arch = gameFileCache.GetArchetype(dhash);
                     if (arch == null)
                     { continue; }
@@ -2117,6 +2145,15 @@ namespace CodeWalker.Rendering
             }
 
 
+            // Do not retain archetypes after they leave the streaming area.
+            expiredPendingRenders.Clear();
+            foreach (var arch in pendingArchetypeRenders.Keys)
+            {
+                if (!ArchetypeRenderables.ContainsKey(arch)) expiredPendingRenders.Add(arch);
+            }
+            foreach (var arch in expiredPendingRenders) pendingArchetypeRenders.Remove(arch);
+            expiredPendingRenders.Clear();
+
             RenderWorldYmapExtras();
         }
 
@@ -2386,6 +2423,7 @@ namespace CodeWalker.Rendering
         }
         private void RenderWorldAddInteriorEntities(YmapEntityDef ent)
         {
+            interiorLighting.Consider(ent, camera.Position);
             var cancull = !camera.IsMapView && !camera.IsOrthographic;//only frustum cull interior entities in perspective view
             if (ent?.MloInstance?.Entities != null)
             {
@@ -2609,6 +2647,9 @@ namespace CodeWalker.Rendering
 
 
 
+        private readonly Dictionary<Archetype, long> pendingArchetypeRenders = new();
+        private readonly List<Archetype> expiredPendingRenders = new();
+
         private Renderable? GetArchetypeRenderable(Archetype? arch)
         {
             if (arch == null) return null;
@@ -2622,7 +2663,24 @@ namespace CodeWalker.Rendering
             }
             if ((rndbl != null) && rndbl.IsLoaded && (rndbl.AllTexturesLoaded || !waitforchildrentoload))
             {
+                pendingArchetypeRenders.Remove(arch);
                 return rndbl;
+            }
+            var now = Environment.TickCount64;
+            if (!pendingArchetypeRenders.TryGetValue(arch, out var since))
+            {
+                pendingArchetypeRenders[arch] = now;
+            }
+            else if (since != long.MinValue && now - since >= 10000)
+            {
+                pendingArchetypeRenders[arch] = long.MinValue;
+                var reason = rndbl == null
+                    ? "drawable unavailable (drawable dictionary " + arch.DrawableDict + ")"
+                    : !rndbl.IsLoaded
+                        ? "GPU geometry unavailable (queued=" + rndbl.LoadQueued + ", bytes=" + rndbl.DataSize + ")"
+                        : "texture dictionaries still loading: " + string.Join(", ",
+                            (rndbl.SDtxds ?? []).Where(t => !t.Loaded).Select(t => t.Name));
+                LodDiag.Report("Render asset '" + arch.Hash + "' unavailable for 10 seconds: " + reason);
             }
             return null;
         }
@@ -3184,6 +3242,7 @@ namespace CodeWalker.Rendering
         public bool RenderArchetype(Archetype? arche, YmapEntityDef? entity, Renderable? rndbl = null, bool cull = true, ClipMapEntry? animClip = null)
         {
             //enqueue a single archetype for rendering.
+            interiorLighting.Consider(entity?.MloParent ?? entity, camera.Position);
 
             if (arche == null) return false;
 
@@ -3282,7 +3341,7 @@ namespace CodeWalker.Rendering
             return res;
         }
 
-        public bool RenderDrawable(DrawableBase? drawable, Archetype? arche, YmapEntityDef? entity, uint txdHash = 0, TextureDictionary? txdExtra = null, Texture? diffOverride = null, ClipMapEntry? animClip = null, ClothInstance? cloth = null, Expression? expr = null)
+        public bool RenderDrawable(DrawableBase? drawable, Archetype? arche, YmapEntityDef? entity, uint txdHash = 0, TextureDictionary? txdExtra = null, Texture? diffOverride = null, ClipMapEntry? animClip = null, ClothInstance? cloth = null, Expression? expr = null, ClipMapEntry? faceClip = null)
         {
             //enqueue a single drawable for rendering.
 
@@ -3308,7 +3367,10 @@ namespace CodeWalker.Rendering
             }
 
             rndbl.Cloth = cloth;
+            // The conditional-opcode correction has been checked against choice_int's merged clips.
             rndbl.Expression = expr;
+            // Separate face overlays still require their own asset-level validation.
+            rndbl.FaceClip = null;
 
             return RenderRenderable(rndbl, arche, entity);
         }
@@ -3341,8 +3403,6 @@ namespace CodeWalker.Rendering
             Vector3 bscen = (arche != null) ? arche.BSCenter : rndbl.Key.BoundingCenter;
             float radius = (arche != null) ? arche.BSRadius : rndbl.Key.BoundingSphereRadius;
             float distance = 0;// (camrel + bscen).Length();
-            bool interiorent = false;
-            bool castshadow = true;
 
             if (entity != null)
             {
@@ -3355,8 +3415,6 @@ namespace CodeWalker.Rendering
                 bscen = entity.BSCenter;
                 camrel += position;
                 distance = entity.Distance;
-                castshadow = (entity.MloParent == null);//don't cast sun/moon shadows if this is an interior entity - optimisation!
-                interiorent = (entity.MloParent != null);
             }
             else
             {
@@ -3468,7 +3526,9 @@ namespace CodeWalker.Rendering
                 rginst.Inst.BSCenter = bscen;
                 rginst.Inst.Radius = radius;
                 rginst.Inst.Distance = distance;
-                rginst.Inst.CastShadow = castshadow;
+                // MLO walls and ceilings must occlude exterior sun/moon light too.
+                rginst.Inst.CastShadow = true;
+                rginst.Inst.IsInterior = entity?.MloParent != null;
 
 
                 RenderableModel[] models = isselected ? rndbl.AllModels : rndbl.HDModels;
@@ -3675,14 +3735,14 @@ namespace CodeWalker.Rendering
                     {
                         // Use the first base animation clipset
                         var clipSetName = clipSetNames[0];
-                        var clipSetHash = JenkHash.GenHash(clipSetName.ToLowerInvariant());
+                        var clipSetHash = JenkHash.GenHashLowerInvariant(clipSetName);
 
                         // Look up the actual clipDictionaryName from clip_sets.ymt
                         clipDictName = stypes.GetClipSet(clipSetHash);
 
                         if (!string.IsNullOrEmpty(clipDictName))
                         {
-                            var ycdHash = JenkHash.GenHash(clipDictName.ToLowerInvariant());
+                            var ycdHash = JenkHash.GenHashLowerInvariant(clipDictName);
                             var ycd = gameFileCache.GetYcd(ycdHash);
 
                             if ((ycd != null) && (ycd.Loaded) && (ycd.ClipMapEntries != null))
@@ -3849,26 +3909,14 @@ namespace CodeWalker.Rendering
             {
                 if (drawable.Skeleton == null)
                 {
-                    drawable.Skeleton = skel;//force the drawable to use this skeleton.
+                    // Each component needs its own skinning matrices: later body updates
+                    // must not overwrite a facial component before the queued draw.
+                    drawable.Skeleton = skel.Clone();
+                    drawable.Skeleton.BindAnimationSkeleton(skel);
                 }
                 else if (drawable.Skeleton != skel)
                 {
-                    var dskel = drawable.Skeleton; //put the bones of the fragment into the drawable. drawable's bones in this case seem messed up!
-                    if (skel.Bones?.Items != null && dskel.Bones?.Items != null)
-                    {
-                        for (int b = 0; b < skel.Bones.Items.Length; b++)
-                        {
-                            var srcbone = skel.Bones.Items[b];
-                            var dstbone = srcbone;
-                            if (dskel.BonesMap.TryGetValue(srcbone.Tag, out dstbone))
-                            {
-                                if (srcbone == dstbone) break; //bone reassignment already done!
-                                dskel.Bones.Items[dstbone.Index] = srcbone;
-                                dskel.BonesMap[srcbone.Tag] = srcbone;
-                            }
-                        }
-                        dskel.BonesSorted = skel.BonesSorted;//this is pretty hacky. TODO: try and fix all this! animate only the frag skeleton!
-                    }
+                    drawable.Skeleton.BindAnimationSkeleton(skel);
                 }
             }
 
@@ -3879,7 +3927,7 @@ namespace CodeWalker.Rendering
 
             if (drawFlag)
             {
-                RenderDrawable(drawable, null, ped.RenderEntity, 0, td, texture, ac, cloth, expr);
+                RenderDrawable(drawable, null, ped.RenderEntity, 0, td, texture, ac, cloth, expr, ped.FaceAnimClip);
             }
 
 
@@ -4160,7 +4208,10 @@ namespace CodeWalker.Rendering
                                                 //the cache hands back: if this one was evicted before loading it will never
                                                 //load, and holding it keeps AllTexturesLoaded false forever, which hides
                                                 //the entity and pins its LOD until the whole renderable is unloaded.
-                                                txd = gameFileCache.GetYtd(txd.Key.Hash) ?? txd;
+                                                // Cache admission can fail before Key is assigned. The file
+                                                // entry still identifies the dictionary we must retry.
+                                                var retryHash = txd.Key.Hash != 0 ? txd.Key.Hash : (txd.RpfFileEntry?.ShortNameHash ?? 0);
+                                                txd = gameFileCache.GetYtd(retryHash) ?? txd;
                                                 rndbl.SDtxds[j] = txd;
                                                 waitingforload = true;
                                             }
@@ -4247,7 +4298,8 @@ namespace CodeWalker.Rendering
                                             }
                                             else
                                             {
-                                                txd = gameFileCache.GetYtd(txd.Key.Hash) ?? txd;//as above - don't hold a dead reference
+                                                var retryHash = txd.Key.Hash != 0 ? txd.Key.Hash : (txd.RpfFileEntry?.ShortNameHash ?? 0);
+                                                txd = gameFileCache.GetYtd(retryHash) ?? txd;//as above - don't hold a dead reference
                                                 rndbl.HDtxds[j] = txd;
                                             }
                                             if (hdtex != null) break;
@@ -4366,27 +4418,18 @@ namespace CodeWalker.Rendering
             Camera = camera;
             Position = camera.Position;
 
-            foreach (var kvp in ymaps)
-            {
-                var ymap = kvp.Value;
-                if (ymap._CMapData.parent != 0) //ensure parent references on ymaps
-                {
-                    ymaps.TryGetValue(ymap._CMapData.parent, out YmapFile? pymap);
-                    if (pymap == null) //skip adding ymaps until parents are available
-                    { continue; }
-                    if (ymap.Parent != pymap)
-                    {
-                        ymap.ConnectToParent(pymap);
-                    }
-                }
-            }
-
             RemoveYmaps.Clear();
             RemoveYmapsSet.Clear();
             foreach (var kvp in CurrentYmaps)
             {
+                // The old parent may already have left CurrentYmaps while an ancestor
+                // was unavailable. Compare the incoming instance as well as removals,
+                // otherwise ConnectToParent changes pointers without rebuilding the tree.
+                var parentHash = kvp.Value._CMapData.parent;
+                bool parentChanged = parentHash != 0 &&
+                    (!ymaps.TryGetValue(parentHash, out var parent) || kvp.Value.Parent != parent);
                 YmapFile? ymap = null;
-                if (!ymaps.TryGetValue(kvp.Key, out ymap) || (ymap != kvp.Value) || (ymap.IsScripted && !ShowScriptedYmaps) || (ymap.LodManagerUpdate))
+                if (!ymaps.TryGetValue(kvp.Key, out ymap) || (ymap != kvp.Value) || (ymap.IsScripted && !ShowScriptedYmaps) || (ymap.LodManagerUpdate) || parentChanged)
                 {
                     RemoveYmaps.Add(kvp.Key);
                     RemoveYmapsSet.Add(kvp.Value);
@@ -4421,6 +4464,7 @@ namespace CodeWalker.Rendering
                         ent.LodManagerChildren?.Clear();
                         ent.LodManagerChildren = null;
                         ent.LodManagerRenderable = null;
+                        lodChildPending.Remove(ent);
                         if ((ent.Parent != null) && (ent.Parent.Ymap != ymap))
                         {
                             ent.Parent.LodManagerRemoveChild(ent);
@@ -4438,12 +4482,28 @@ namespace CodeWalker.Rendering
                 ymap.LodManagerUpdate = false;
                 ymap.LodManagerOldEntities = null;
             }
+            // Detach the old hierarchy before changing entity parent references.
+            foreach (var kvp in ymaps)
+            {
+                var ymap = kvp.Value;
+                if (ymap._CMapData.parent != 0) //ensure parent references on ymaps
+                {
+                    ymaps.TryGetValue(ymap._CMapData.parent, out YmapFile? pymap);
+                    if (pymap == null) //skip adding ymaps until parents are available
+                    { continue; }
+                    if (ymap.Parent != pymap)
+                    {
+                        ymap.ConnectToParent(pymap);
+                    }
+                }
+            }
+
             foreach (var kvp in ymaps)
             {
                 var ymap = kvp.Value;
                 if (ymap.IsScripted && !ShowScriptedYmaps)
                 { continue; }
-                if ((ymap._CMapData.parent != 0) && (ymap.Parent == null)) //skip adding ymaps until parents are available
+                if ((ymap._CMapData.parent != 0) && !ymaps.ContainsKey(ymap._CMapData.parent)) //cached Parent may refer to an evicted map
                 { continue; }
                 if (!CurrentYmaps.ContainsKey(kvp.Key))
                 {
@@ -4596,7 +4656,9 @@ namespace CodeWalker.Rendering
                 }
             }
 
-            if ((clist != null) && (clist.Count >= ent._CEntityDef.numChildren))
+            // An empty list is left behind when the last streamed child is removed.
+            // It cannot replace the parent, even when numChildren is zero in the map.
+            if ((clist is { Count: > 0 }) && (clist.Count >= ent._CEntityDef.numChildren))
             {
                 if (ent.Parent != null)//already calculated root entities distance
                 {

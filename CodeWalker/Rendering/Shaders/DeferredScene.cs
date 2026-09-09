@@ -39,6 +39,8 @@ namespace CodeWalker.Rendering
         public uint IsLOD; //useful or not?
         public uint SampleCount;//for MSAA
         public float SampleMult;//for MSAA
+        public Color4 InteriorAmbientUp;
+        public Color4 InteriorAmbientDown;
     }
     public struct DeferredLightInstVars
     {
@@ -314,7 +316,7 @@ namespace CodeWalker.Rendering
             Viewport.Y = 0.0f;
 
 
-            GBuffers = new GpuMultiTexture(device, uw, uh, 4, Format.R8G8B8A8_UNorm, true, Format.D32_Float, MSAASampleCount);
+            GBuffers = new GpuMultiTexture(device, uw, uh, 4, Format.R8G8B8A8_UNorm, true, Format.D32_Float_S8X24_UInt, MSAASampleCount);
             WindowSizeVramUsage += GBuffers.VramUsage;
 
             SceneColour = new GpuTexture(device, uw, uh, Format.R32G32B32A32_Float, 1, 0, true, Format.D32_Float);
@@ -383,6 +385,8 @@ namespace CodeWalker.Rendering
             LightVSVars.SetVSCBuffer(context, 0);
 
             LightPSVars.Vars.GlobalLights = globalLights.Params;
+            LightPSVars.Vars.InteriorAmbientUp = globalLights.InteriorAmbientUp;
+            LightPSVars.Vars.InteriorAmbientDown = globalLights.InteriorAmbientDown;
             LightPSVars.Vars.ViewProjInv = Matrix.Transpose(camera.ViewProjInvMatrix);
             LightPSVars.Vars.CameraPos = Vector4.Zero;
             LightPSVars.Vars.EnableShadows = (globalShadows != null) ? 1u : 0u;
