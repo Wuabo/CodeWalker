@@ -258,6 +258,15 @@ namespace CodeWalker.GameFiles
             }
         }
 
+        public static bool Ensure(uint hash, string str)
+        {
+            if (hash == 0 || string.IsNullOrEmpty(str)) return true;
+            lock (syncRoot)
+            {
+                return !Index.TryAdd(hash, str);
+            }
+        }
+
         public static void EnsureRange(IReadOnlyDictionary<uint, string> items)
         {
             //bulk merge used by the parallel jenk-index build: take the lock once and add many.
