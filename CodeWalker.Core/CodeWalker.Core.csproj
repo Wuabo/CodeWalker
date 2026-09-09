@@ -35,6 +35,8 @@
     <None Update="strings.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+     <None Include="..\nametables\**\*" Link="nametables\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+   
   </ItemGroup>
 
 </Project>
