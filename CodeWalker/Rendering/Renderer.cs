@@ -3454,14 +3454,25 @@ namespace CodeWalker.Rendering
                     FragDrawable? fdrawable = rndbl.Key as FragDrawable;
                     if (fdrawable != null)
                     {
+                        //Use the animated skeleton (already updated above) so frag collision follows clips.
+                        var skel = rndbl.Skeleton
+                            ?? fdrawable.Skeleton
+                            ?? fdrawable.OwnerFragment?.Drawable?.Skeleton;
+                        var plod = fdrawable.OwnerFragment?.PhysicsLODGroup?.PhysicsLOD1
+                            ?? fdrawable.OwnerFragmentPhys?.OwnerFragPhysLod;
+
                         if (fdrawable.Bound != null)
                         {
-                            RenderCollisionMesh(fdrawable.Bound, entity);
+                            RenderCollisionMesh(fdrawable.Bound, entity, skel, plod, fdrawable.OwnerFragmentPhys);
                         }
-                        var fbound = fdrawable.OwnerFragment?.PhysicsLODGroup?.PhysicsLOD1?.Bound;
-                        if (fbound != null)
+                        //Full PhysicsLOD composite only from the main fragment drawable (not each phys child).
+                        if (fdrawable.OwnerFragmentPhys == null)
                         {
-                            RenderCollisionMesh(fbound, entity);//TODO: these probably have extra transforms..!
+                            var fbound = plod?.Bound;
+                            if ((fbound != null) && (fbound != fdrawable.Bound))
+                            {
+                                RenderCollisionMesh(fbound, entity, skel, plod);
+                            }
                         }
                     }
                 }
@@ -3950,7 +3961,7 @@ namespace CodeWalker.Rendering
 
 
 
-        public void RenderCollisionMesh(Bounds? bounds, YmapEntityDef? entity)
+        public void RenderCollisionMesh(Bounds? bounds, YmapEntityDef? entity, Skeleton? skeleton = null, FragPhysicsLOD? physLod = null, FragPhysTypeChild? physChild = null)
         {
             if (bounds == null) return;
             //enqueue a single collision mesh for rendering.
@@ -3978,22 +3989,40 @@ namespace CodeWalker.Rendering
                 rbginst.Inst.Renderable = rndbc;
                 if (rndbc.Geometries != null)
                 {
-                    foreach (var geom in rndbc.Geometries)
+                    for (int gi = 0; gi < rndbc.Geometries.Length; gi++)
                     {
+                        var geom = rndbc.Geometries[gi];
                         if (geom == null) continue;
                         rbginst.Geom = geom;
-                        
+
                         var pos = position;
                         var ori = orientation;
                         var sca = scale;
-                        if (geom.Bound is BoundGeometry bgeom)
+
+                        //Rest pose for this child (ChildrenTransformation), then optionally warp by bone anim.
+                        var rest = geom.Bound?.Transform ?? Matrix.Identity;
+                        var live = GetAnimatedBoundTransform(rest, skeleton, physLod, physChild, gi, geom.Bound);
+
+                        if (geom.Bound is BoundGeometry)
                         {
-                            var rmat = bgeom.Transform;
+                            //BoundGeometry verts stay local; apply full live matrix at draw time.
+                            var rmat = live;
                             sca = scale * rmat.ScaleVector;
                             pos = position + orientation.Multiply(rmat.TranslationVector);
                             rmat.TranslationVector = Vector3.Zero;
                             ori = orientation * Quaternion.RotationMatrix(rmat);
                         }
+                        else
+                        {
+                            //Capsules/boxes/spheres bake rest into their points at init — apply Anim*BindInv only.
+                            var animRel = live * Matrix.Invert(rest);
+                            animRel.M44 = 1.0f;
+                            sca = scale * animRel.ScaleVector;
+                            pos = position + orientation.Multiply(animRel.TranslationVector);
+                            animRel.TranslationVector = Vector3.Zero;
+                            ori = orientation * Quaternion.RotationMatrix(animRel);
+                        }
+
                         rbginst.Inst.Position = pos + ori.Multiply(geom.CenterGeom * sca);
                         rbginst.Inst.Orientation = ori;
                         rbginst.Inst.Scale = sca;
@@ -4011,6 +4040,46 @@ namespace CodeWalker.Rendering
                 }
             }
 
+        }
+
+        //Map a BoundComposite child (or single phys-child bound) onto the animated skeleton.
+        //At bind pose Anim*BindInv == I so live == rest; while a clip plays the mesh follows the bone.
+        private static Matrix GetAnimatedBoundTransform(Matrix rest, Skeleton? skeleton, FragPhysicsLOD? physLod, FragPhysTypeChild? physChild, int childIndex, Bounds? bound)
+        {
+            if (skeleton?.BonesMap == null) return rest;
+
+            FragPhysTypeChild? child = physChild;
+            if ((child == null) && (physLod?.Children?.data_items != null) &&
+                (childIndex >= 0) && (childIndex < physLod.Children.data_items.Length))
+            {
+                child = physLod.Children.data_items[childIndex];
+            }
+
+            //Leaf Bound drawn on its own: find matching phys child by shared Bound reference.
+            if ((child == null) && (physLod?.Children?.data_items != null) && (bound != null))
+            {
+                var items = physLod.Children.data_items;
+                for (int i = 0; i < items.Length; i++)
+                {
+                    if (items[i]?.Drawable1?.Bound == bound ||
+                        (physLod.Bound is BoundComposite bc &&
+                         bc.Children?.data_items != null &&
+                         i < bc.Children.data_items.Length &&
+                         bc.Children.data_items[i] == bound))
+                    {
+                        child = items[i];
+                        break;
+                    }
+                }
+            }
+
+            if (child == null) return rest;
+            if (!skeleton.BonesMap.TryGetValue(child.BoneTag, out var bone) || bone == null) return rest;
+
+            //rest (fragment space) → bone-local via BindInv → animated fragment space via AnimTransform
+            var live = bone.AnimTransform * bone.BindTransformInv * rest;
+            live.M44 = 1.0f;
+            return live;
         }
 
 

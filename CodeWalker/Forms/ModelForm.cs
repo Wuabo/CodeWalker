@@ -1162,7 +1162,7 @@ namespace CodeWalker.Forms
                 var hash = JenkHash.GenHashLowerInvariant(name);
                 if (gameFileCache.GetYcdEntry(hash) != null) return true;
             }
-            return TryResolveSiblingYcdPath(name) != null;
+            return FindNearbyYcd(name) != null;
         }
 
         private string? GetModelDirectory()
@@ -1193,33 +1193,175 @@ namespace CodeWalker.Forms
             return null;
         }
 
-        private string? TryResolveSiblingYcdPath(string dictName)
+        //Find dictName.ycd near the model without assuming folder names:
+        // same folder, parent folder, any sibling folder, then a shallow walk upward.
+        private string? FindYcdPathNearModel(string dictName)
         {
             var dir = GetModelDirectory();
             if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(dictName)) return null;
 
-            var path = Path.Combine(dir, dictName + ".ycd");
-            return File.Exists(path) ? path : null;
+            var file = dictName + ".ycd";
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            bool tryPath(string? path)
+            {
+                if (string.IsNullOrEmpty(path) || !seen.Add(path)) return false;
+                try { return File.Exists(path); }
+                catch { return false; }
+            }
+
+            if (tryPath(Path.Combine(dir, file))) return Path.Combine(dir, file);
+
+            DirectoryInfo? walk;
+            try { walk = new DirectoryInfo(dir); }
+            catch { return null; }
+
+            //Current folder's siblings + parent, then walk up a few levels.
+            for (int depth = 0; depth < 4 && walk != null; depth++)
+            {
+                var parent = walk.Parent;
+                if (parent == null) break;
+
+                var parentFile = Path.Combine(parent.FullName, file);
+                if (tryPath(parentFile)) return parentFile;
+
+                try
+                {
+                    foreach (var sibling in parent.EnumerateDirectories())
+                    {
+                        if (string.Equals(sibling.FullName, walk.FullName, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        var candidate = Path.Combine(sibling.FullName, file);
+                        if (tryPath(candidate)) return candidate;
+                    }
+                }
+                catch { }
+
+                walk = parent;
+            }
+
+            return null;
+        }
+
+        private RpfFileEntry? FindYcdEntryInArchive(string dictName)
+        {
+            var rpf = rpfFileEntry?.File;
+            if (rpf?.AllEntries == null || string.IsNullOrEmpty(dictName)) return null;
+
+            var want = (dictName + ".ycd").ToLowerInvariant();
+            var modelPath = (rpfFileEntry?.Path ?? "").Replace('/', '\\');
+            var modelDir = "";
+            var slash = modelPath.LastIndexOf('\\');
+            if (slash > 0) modelDir = modelPath.Substring(0, slash);
+
+            RpfFileEntry? sameDir = null;
+            RpfFileEntry? siblingDir = null;
+            RpfFileEntry? anyMatch = null;
+
+            void consider(RpfFile? archive)
+            {
+                if (archive?.AllEntries == null) return;
+                foreach (var entry in archive.AllEntries)
+                {
+                    if (entry is not RpfFileEntry fe) continue;
+                    if (!string.Equals(fe.NameLower, want, StringComparison.Ordinal)) continue;
+
+                    anyMatch ??= fe;
+                    var epath = (fe.Path ?? "").Replace('/', '\\');
+                    var eslash = epath.LastIndexOf('\\');
+                    var edir = eslash > 0 ? epath.Substring(0, eslash) : "";
+
+                    if (!string.IsNullOrEmpty(modelDir) &&
+                        string.Equals(edir, modelDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        sameDir = fe;
+                        return;
+                    }
+
+                    //Sibling folder: same parent path, different last segment (names can be anything).
+                    if (siblingDir == null && !string.IsNullOrEmpty(modelDir) && !string.IsNullOrEmpty(edir))
+                    {
+                        var mparentSlash = modelDir.LastIndexOf('\\');
+                        var eparentSlash = edir.LastIndexOf('\\');
+                        var mparent = mparentSlash > 0 ? modelDir.Substring(0, mparentSlash) : "";
+                        var eparent = eparentSlash > 0 ? edir.Substring(0, eparentSlash) : "";
+                        if (string.Equals(mparent, eparent, StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(edir, modelDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            siblingDir = fe;
+                        }
+                    }
+                }
+            }
+
+            consider(rpf);
+            if (sameDir != null) return sameDir;
+
+            try
+            {
+                var top = rpf.GetTopParent();
+                if (top != null)
+                {
+                    consider(top);
+                    if (sameDir != null) return sameDir;
+                    if (top.Children != null)
+                    {
+                        foreach (var child in top.Children)
+                        {
+                            if (child == rpf) continue;
+                            consider(child);
+                            if (sameDir != null) return sameDir;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return sameDir ?? siblingDir ?? anyMatch;
+        }
+
+        private (string? path, RpfFileEntry? entry)? FindNearbyYcd(string dictName)
+        {
+            var path = FindYcdPathNearModel(dictName);
+            if (path != null) return (path, null);
+
+            var entry = FindYcdEntryInArchive(dictName);
+            if (entry != null) return (null, entry);
+
+            return null;
         }
 
         private YcdFile? TryLoadYcdBesideModel(string dictName)
         {
-            var path = TryResolveSiblingYcdPath(dictName);
-            if (path == null) return null;
+            var found = FindNearbyYcd(dictName);
+            if (found == null) return null;
 
             try
             {
-                var data = File.ReadAllBytes(path);
-                uint rsc7 = (data.Length > 4) ? BitConverter.ToUInt32(data, 0) : 0;
-                if (rsc7 != 0x37435352) return null; //need RSC7 resource
+                byte[]? data;
+                RpfFileEntry entry;
 
-                var entry = RpfFile.CreateResourceFileEntry(ref data, 0);
-                entry.Name = Path.GetFileName(path);
-                entry.NameLower = entry.Name.ToLowerInvariant();
-                entry.Path = path;
-                entry.NameHash = JenkHash.GenHash(entry.NameLower);
-                entry.ShortNameHash = JenkHash.GenHash(Path.GetFileNameWithoutExtension(entry.NameLower));
-                data = ResourceBuilder.Decompress(data);
+                if (found.Value.path != null)
+                {
+                    data = File.ReadAllBytes(found.Value.path);
+                    uint rsc7 = (data.Length > 4) ? BitConverter.ToUInt32(data, 0) : 0;
+                    if (rsc7 != 0x37435352) return null; //need RSC7 resource
+
+                    entry = RpfFile.CreateResourceFileEntry(ref data, 0);
+                    entry.Name = Path.GetFileName(found.Value.path);
+                    entry.NameLower = entry.Name.ToLowerInvariant();
+                    entry.Path = found.Value.path;
+                    entry.NameHash = JenkHash.GenHash(entry.NameLower);
+                    entry.ShortNameHash = JenkHash.GenHash(Path.GetFileNameWithoutExtension(entry.NameLower));
+                    data = ResourceBuilder.Decompress(data);
+                }
+                else if (found.Value.entry != null)
+                {
+                    entry = found.Value.entry;
+                    data = entry.File?.ExtractFile(entry);
+                    if (data == null) return null;
+                }
+                else return null;
 
                 var ycd = new YcdFile(entry);
                 ycd.Load(data, entry);
