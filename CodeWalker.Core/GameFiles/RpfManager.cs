@@ -251,9 +251,15 @@ namespace CodeWalker.GameFiles
         }
 
 
+        //Game asset extensions that can live as loose (unpacked) files under mods/onigiri or ExtraFolders.
+        private static readonly HashSet<string> ExtraFileExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".ymap", ".ytyp", ".ydr", ".ydd", ".yft", ".ytd", ".ybn", ".ynv", ".ycd", ".yed", ".ypt", ".ymf", ".ymt", ".awc" };
+
         //The enhanced mods folder (onigiri) is mostly loose, unpacked files rather than replacement rpfs.
         //Map each loose file onto the base game entry path(s) it overrides and register it in ModEntryDict,
         //so the existing EnableMods lookups pick it up like any other mods-folder entry.
+        //New assets (e.g. a custom .ycd that does not replace a base file) are also registered into
+        //AllRpfs/ExtraRpfs so YcdDict/YftDict/etc can find them without packing into an .rpf.
         private void ScanLooseModFiles(string folder)
         {
             var modsdir = System.IO.Path.Combine(folder, ModsFolder);
@@ -296,13 +302,30 @@ namespace CodeWalker.GameFiles
                     }
                 }
             }
+
+            //Register loose game assets so hash lookups (GetYcd/GetYft/...) work for brand-new mod files
+            //and so loose overrides win over the base copies that remain in AllRpfs.
+            var seen = new HashSet<RpfFile>();
+            foreach (var cands in byName.Values)
+            {
+                foreach (var (_, entry) in cands)
+                {
+                    if (entry.File == null || entry.NameLower == null) continue;
+                    if (!ExtraFileExtensions.Contains(System.IO.Path.GetExtension(entry.NameLower))) continue;
+                    if (!seen.Add(entry.File)) continue;
+
+                    EntryDict[entry.Path] = entry;
+                    RpfDict[entry.File.Path] = entry.File;
+                    AllRpfs.Add(entry.File);
+                    ModRpfs.Add(entry.File);
+                    ExtraRpfs.Add(entry.File); //last in priority order, same as FiveM extra folders
+                }
+            }
         }
 
         //FiveM map resources are trees of loose (unpacked) assets rather than rpfs. Wrap each asset in a
         //LooseRpfFile and register it, so GameFileCache can fold them in like an extra dlcpack that wins
         //over everything else. Paths get a "fivem\" prefix to keep them out of the real game path space.
-        private static readonly HashSet<string> ExtraFileExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".ymap", ".ytyp", ".ydr", ".ydd", ".yft", ".ytd", ".ybn", ".ynv", ".ycd", ".yed", ".ypt", ".ymf", ".ymt", ".awc" };
 
         public const string ExtraFolderPrefix = "fivem\\";
 

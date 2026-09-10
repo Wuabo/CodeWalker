@@ -1128,7 +1128,125 @@ namespace CodeWalker.Forms
             if (ModelArchetype != null)
             {
                 var str = ModelArchetype.ClipDict.ToCleanString();
-                ClipDictComboBox.Text = str;
+                if (!string.IsNullOrEmpty(str))
+                {
+                    ClipDictComboBox.Text = str;
+                    return;
+                }
+            }
+
+            //No ytyp clipDictionary: try same short name as the model (common for loose mods/*.yft + *.ycd).
+            var shortName = GetModelShortNameForAnim();
+            if (!string.IsNullOrEmpty(shortName) && ClipDictAvailable(shortName))
+            {
+                ClipDictComboBox.Text = shortName;
+            }
+        }
+
+        private string? GetModelShortNameForAnim()
+        {
+            var namelower = rpfFileEntry?.GetShortNameLower();
+            if (string.IsNullOrEmpty(namelower)) return null;
+            if (namelower.EndsWith("_hi", StringComparison.Ordinal))
+            {
+                namelower = namelower.Substring(0, namelower.Length - 3);
+            }
+            return namelower;
+        }
+
+        private bool ClipDictAvailable(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            if (gameFileCache?.IsInited == true)
+            {
+                var hash = JenkHash.GenHashLowerInvariant(name);
+                if (gameFileCache.GetYcdEntry(hash) != null) return true;
+            }
+            return TryResolveSiblingYcdPath(name) != null;
+        }
+
+        private string? GetModelDirectory()
+        {
+            if (rpfFileEntry?.File is LooseRpfFile loose && !string.IsNullOrEmpty(loose.FilePath))
+            {
+                return Path.GetDirectoryName(loose.FilePath);
+            }
+
+            var p = rpfFileEntry?.Path;
+            if (string.IsNullOrEmpty(p)) return null;
+
+            try
+            {
+                if (Path.IsPathRooted(p) && File.Exists(p))
+                {
+                    return Path.GetDirectoryName(p);
+                }
+
+                var gtaPath = Path.Combine(GTAFolder.CurrentGTAFolder, p);
+                if (File.Exists(gtaPath))
+                {
+                    return Path.GetDirectoryName(gtaPath);
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private string? TryResolveSiblingYcdPath(string dictName)
+        {
+            var dir = GetModelDirectory();
+            if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(dictName)) return null;
+
+            var path = Path.Combine(dir, dictName + ".ycd");
+            return File.Exists(path) ? path : null;
+        }
+
+        private YcdFile? TryLoadYcdBesideModel(string dictName)
+        {
+            var path = TryResolveSiblingYcdPath(dictName);
+            if (path == null) return null;
+
+            try
+            {
+                var data = File.ReadAllBytes(path);
+                uint rsc7 = (data.Length > 4) ? BitConverter.ToUInt32(data, 0) : 0;
+                if (rsc7 != 0x37435352) return null; //need RSC7 resource
+
+                var entry = RpfFile.CreateResourceFileEntry(ref data, 0);
+                entry.Name = Path.GetFileName(path);
+                entry.NameLower = entry.Name.ToLowerInvariant();
+                entry.Path = path;
+                entry.NameHash = JenkHash.GenHash(entry.NameLower);
+                entry.ShortNameHash = JenkHash.GenHash(Path.GetFileNameWithoutExtension(entry.NameLower));
+                data = ResourceBuilder.Decompress(data);
+
+                var ycd = new YcdFile(entry);
+                ycd.Load(data, entry);
+                return ycd;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void TryAutoSelectClip()
+        {
+            if (Ycd?.ClipMapEntries == null || Ycd.ClipMapEntries.Length == 0) return;
+
+            //Prefer a clip whose hash matches the model/archetype (in-game idle convention).
+            if (ModelHash != 0 && Ycd.ClipMap != null &&
+                Ycd.ClipMap.TryGetValue(ModelHash, out var byModel) && byModel?.Clip != null)
+            {
+                ClipComboBox.Text = byModel.Clip.ShortName;
+                return;
+            }
+
+            var first = Ycd.ClipMapEntries.FirstOrDefault(e => e?.Clip != null)?.Clip?.ShortName;
+            if (!string.IsNullOrEmpty(first))
+            {
+                ClipComboBox.Text = first;
             }
         }
 
@@ -1184,15 +1302,32 @@ namespace CodeWalker.Forms
 
         private void LoadClipDict(string name)
         {
-            if (gameFileCache == null) return;
-            if (!gameFileCache.IsInited) return;//what to do here? wait for it..?
-
-            var ycdhash = JenkHash.GenHashLowerInvariant(name);
-            var ycd = gameFileCache.GetYcd(ycdhash);
-            while ((ycd != null) && (!ycd.Loaded))
+            if (string.IsNullOrWhiteSpace(name))
             {
-                Thread.Sleep(1);//kinda hacky
+                Ycd = null;
+                AnimClip = null;
+                ClipComboBox.Items.Clear();
+                ClipComboBox.Items.Add("");
+                ClipComboBox.SelectedIndex = 0;
+                return;
+            }
+
+            YcdFile? ycd = null;
+            if (gameFileCache?.IsInited == true)
+            {
+                var ycdhash = JenkHash.GenHashLowerInvariant(name);
                 ycd = gameFileCache.GetYcd(ycdhash);
+                while ((ycd != null) && (!ycd.Loaded))
+                {
+                    Thread.Sleep(1);//kinda hacky
+                    ycd = gameFileCache.GetYcd(ycdhash);
+                }
+            }
+
+            //RPF Explorer / loose mods: YCD next to the YFT is often not in YcdDict yet.
+            if (ycd == null || ycd.ClipMapEntries == null)
+            {
+                ycd = TryLoadYcdBesideModel(name) ?? ycd;
             }
 
             Ycd = ycd;
@@ -1221,6 +1356,8 @@ namespace CodeWalker.Forms
             {
                 ClipComboBox.Items.Add(item);
             }
+
+            TryAutoSelectClip();
         }
 
         private void SelectClip(string name)
