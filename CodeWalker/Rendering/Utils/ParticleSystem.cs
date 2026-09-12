@@ -85,6 +85,13 @@ namespace CodeWalker.Rendering
         // effect loops; spawned children play once. Origin is the world position a child was spawned at; particles
         // in that child spawn relative to it. One spawn level only (children don't spawn grandchildren), as the game.
         public Vector3 Origin;
+        // World orientation of the emitter (e.g. ped bone). Spawns transform position/velocity by this.
+        public Quaternion OriginOrientation = Quaternion.Identity;
+        // Extra uniform scale for scenario/entity previews (meta Scale on ConditionalClipSetVFX).
+        public float PreviewScale = 1.0f;
+        // When true, hold the effect timeline at a mid ratio so continuous ambient FX (cig smoke, etc.)
+        // emit steadily instead of pulsing every Duration loop.
+        public bool SteadyEmission;
         public List<ParticleEffectInst> ChildEffects { get; } = new List<ParticleEffectInst>();
         public bool IsSpawnedChild { get; private set; }
         bool loop = true;
@@ -181,7 +188,7 @@ namespace CodeWalker.Rendering
             if (dt > 0.1f) dt = 0.1f; //clamp big frame gaps
 
             float edt = dt * Math.Max(0f, TimeScale);
-            if (Playing)
+            if (Playing && !SteadyEmission)
             {
                 CurrentTime += edt;
                 if (CurrentTime >= Duration)
@@ -190,10 +197,19 @@ namespace CodeWalker.Rendering
                     else { CurrentTime = Duration; finished = true; } //spawned children play once
                 }
             }
+            else if (Playing && SteadyEmission)
+            {
+                // Keep the emitter timeline in the active band; particles still age via edt below.
+                if (Duration > 0.01f) CurrentTime = Duration * 0.35f;
+            }
 
             // a finished child stops emitting (ratio past the end) but still ages its existing particles out
-            float ratio = finished ? 1.0001f : ((Duration > 0f) ? (CurrentTime / Duration) : 0f);
-            CurrentZoom = ComputeZoom(Math.Min(ratio, 1f));
+            float ratio = finished ? 1.0001f
+                : SteadyEmission ? 0.35f
+                : ((Duration > 0f) ? (CurrentTime / Duration) : 0f);
+            float zoom = ComputeZoom(Math.Min(ratio, 1f));
+            if (PreviewScale > 0.0001f && PreviewScale != 1.0f) zoom *= PreviewScale;
+            CurrentZoom = zoom;
             foreach (var e in Emitters)
             {
                 e.Update(this, ratio, Playing ? edt : 0f, rnd);
@@ -322,6 +338,7 @@ namespace CodeWalker.Rendering
         float effectZoom = 1f;         //effect-rule zoom (ZoomScalar/ZoomLevel), multiplies particle size each frame
         ParticleEffectInst? ownerEffect; //owning effect inst, for EffectSpawner child spawning + world origin
         Vector3 effectOrigin;           //world position of the owning effect (children spawn relative to it)
+        Quaternion effectOrientation = Quaternion.Identity;
         ParticleEffectSpawner? atRatioSpawner;   //EffectSpawnerAtRatio (if it names a child effect)
         ParticleEffectRule? atRatioChildRule;    //resolved child effect rule to spawn at the trigger ratio
         int atlasCols = 1, atlasRows = 1, atlasFrames = 1;
@@ -599,6 +616,8 @@ namespace CodeWalker.Rendering
             effectZoom = (effect?.CurrentZoom ?? 1f);
             ownerEffect = effect;
             effectOrigin = effect?.Origin ?? Vector3.Zero;
+            effectOrientation = effect?.OriginOrientation ?? Quaternion.Identity;
+            if (effectOrientation == Quaternion.Zero) effectOrientation = Quaternion.Identity;
             UpdateParticles(effectRatio, dt);
 
             float start = Event?.StartRatio ?? 0f;
@@ -848,6 +867,13 @@ namespace CodeWalker.Rendering
                 Vector3 tpos = SampleDomain(target, emitRatio, rnd);
                 vel = (target.IsPointRelative != 0) ? tpos : (tpos - pos);
                 vel *= speed;
+            }
+
+            // Scenario/entity bone attachment: rotate local spawn into world/bone space.
+            if (effectOrientation != Quaternion.Identity)
+            {
+                pos = Vector3.Transform(pos, effectOrientation);
+                if (vel != Vector3.Zero) vel = Vector3.Transform(vel, effectOrientation);
             }
 
             p.Position = effectOrigin + pos; //effectOrigin is non-zero for spawned child effects (world placement)

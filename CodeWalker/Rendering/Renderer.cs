@@ -115,6 +115,10 @@ namespace CodeWalker.Rendering
         private readonly Dictionary<string, ParticleEffectInst> scenarioVfxCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<ParticleEffectInst> scenarioVfxThisFrame = new();
         private readonly List<ScenarioVfxDef> scenarioVfxDefsScratch = new();
+        // Keep scenario clip OverridePlayTime active until EndRender so RenderQueued animates with the local clock.
+        private ClipMapEntry? scenarioAnimClipPendingRestore;
+        private bool scenarioAnimClipPrevOverride;
+        private float scenarioAnimClipPrevPlayTime;
 
         public bool ShowScriptedYmaps = true;
         public List<YmapFile> VisibleYmaps = new List<YmapFile>(128);
@@ -380,7 +384,16 @@ namespace CodeWalker.Rendering
 
         public void EndRender()
         {
+            RestoreScenarioAnimClipClock();
             renderableCache.RenderThreadSync();
+        }
+
+        private void RestoreScenarioAnimClipClock()
+        {
+            if (scenarioAnimClipPendingRestore == null) return;
+            scenarioAnimClipPendingRestore.OverridePlayTime = scenarioAnimClipPrevOverride;
+            scenarioAnimClipPendingRestore.PlayTime = scenarioAnimClipPrevPlayTime;
+            scenarioAnimClipPendingRestore = null;
         }
 
         public bool ContentThreadProc()
@@ -3930,11 +3943,13 @@ namespace CodeWalker.Rendering
                 ped.AnimClip = animClip;
                 RenderPed(ped);
 
-                // Restore shared ClipMapEntry flags so world/other viewers keep using wall-clock time.
+                // Keep OverridePlayTime until EndRender so RenderQueued uses the local scenario clock.
                 if (animClip != null)
                 {
-                    animClip.OverridePlayTime = prevOverride;
-                    animClip.PlayTime = prevPlayTime;
+                    RestoreScenarioAnimClipClock(); // in case a previous frame didn't end cleanly
+                    scenarioAnimClipPendingRestore = animClip;
+                    scenarioAnimClipPrevOverride = prevOverride;
+                    scenarioAnimClipPrevPlayTime = prevPlayTime;
                 }
 
                 // Render scenario props (coffee cup, phone, etc.) from PropSet / PropName.
@@ -4028,6 +4043,10 @@ namespace CodeWalker.Rendering
             CollectScenarioVfxDefs(point, scenarioVfxDefsScratch);
             if (scenarioVfxDefsScratch.Count == 0) return;
 
+            // Prefer continuous / registered VFX. Triggered exhales etc. look wrong when looped forever.
+            FilterScenarioVfxForPreview(scenarioVfxDefsScratch);
+            if (scenarioVfxDefsScratch.Count == 0) return;
+
             var ypt = EnsureScenarioCoreYpt();
             if (ypt?.AllEffects == null || ypt.AllEffects.Length == 0) return;
 
@@ -4037,21 +4056,34 @@ namespace CodeWalker.Rendering
             if (pointKey != scenarioVfxPointKey)
             {
                 scenarioVfxPointKey = pointKey;
+                foreach (var old in scenarioVfxCache.Values) old.Reset();
                 scenarioVfxCache.Clear();
             }
 
             var pedWorld = Matrix.AffineTransformation(1.0f, pedOri, pedPos);
+            float dt = currentElapsedTime;
+            if (dt <= 0f) dt = 1f / 60f;
 
             foreach (var def in scenarioVfxDefsScratch)
             {
-                if (!scenarioVfxCache.TryGetValue(def.FxName, out var inst))
+                var cacheKey = def.FxName + "|" + def.BoneId;
+                if (!scenarioVfxCache.TryGetValue(cacheKey, out var inst))
                 {
                     var rule = ResolveScenarioParticleRule(ypt, def.FxName);
                     if (rule == null) continue;
-                    inst = new ParticleEffectInst(rule, ypt, gameFileCache) { Playing = true };
-                    scenarioVfxCache[def.FxName] = inst;
+                    // Play exactly like ModelForm: natural timeline loop, no SteadyEmission hacks.
+                    inst = new ParticleEffectInst(rule, ypt, gameFileCache)
+                    {
+                        Playing = true,
+                        TimeScale = 1.0f,
+                        PreviewScale = def.Scale > 0.0001f ? def.Scale : 1.0f,
+                    };
+                    scenarioVfxCache[cacheKey] = inst;
                 }
 
+                // Attach like the game's bone FX: move the emitter to the bone tip, but keep particle
+                // simulation axes in world space. Rotating emission by the hand bone makes smoke shoot
+                // sideways every frame and looks broken compared to in-game.
                 Vector3 origin = pedPos;
                 if (def.BoneId != 0 && ped.Skeleton?.BonesMap != null &&
                     ped.Skeleton.BonesMap.TryGetValue(def.BoneId, out var bone))
@@ -4060,7 +4092,7 @@ namespace CodeWalker.Rendering
                     origin = world.TranslationVector;
                     if (def.OffsetPosition != Vector3.Zero)
                     {
-                        var boneOri = Quaternion.RotationMatrix(world);
+                        var boneOri = Quaternion.Normalize(Quaternion.RotationMatrix(world));
                         origin += Vector3.Transform(def.OffsetPosition, boneOri);
                     }
                 }
@@ -4070,11 +4102,37 @@ namespace CodeWalker.Rendering
                 }
 
                 inst.Origin = origin;
+                inst.OriginOrientation = Quaternion.Identity;
                 inst.Playing = true;
-                inst.Update(currentElapsedTime);
-                RenderParticleModels(inst);
-                scenarioVfxThisFrame.Add(inst);
+
+                if (!scenarioVfxThisFrame.Contains(inst))
+                {
+                    inst.Update(dt);
+                    RenderParticleModels(inst);
+                    scenarioVfxThisFrame.Add(inst);
+                }
             }
+        }
+
+        private static void FilterScenarioVfxForPreview(List<ScenarioVfxDef> defs)
+        {
+            if (defs.Count <= 1) return;
+
+            // Keep continuous emitters; drop event-triggered clips that only fire on anim tags in-game.
+            var continuous = defs.Where(IsContinuousScenarioVfx).ToList();
+            if (continuous.Count == 0) return; // keep originals as fallback
+
+            defs.Clear();
+            // One primary continuous FX is enough for a clean preview (e.g. cigarette tip smoke).
+            defs.Add(continuous[0]);
+        }
+
+        private static bool IsContinuousScenarioVfx(ScenarioVfxDef def)
+        {
+            var name = def.Name ?? string.Empty;
+            if (name.IndexOf("TRIGGERED", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            if (name.StartsWith("exhale", StringComparison.OrdinalIgnoreCase)) return false;
+            return true;
         }
 
         private static void CollectScenarioVfxDefs(MCScenarioPoint? point, List<ScenarioVfxDef> dest)
@@ -4206,9 +4264,21 @@ namespace CodeWalker.Rendering
         public void RenderScenarioParticleEffects()
         {
             if (scenarioVfxThisFrame.Count == 0) return;
-            foreach (var inst in scenarioVfxThisFrame)
-                RenderParticleEffect(inst);
-            scenarioVfxThisFrame.Clear();
+
+            // World view is lit; full glow sprites read as blown-out discs.
+            float prevGlow = ParticleGlowScale;
+            ParticleGlowScale = Math.Min(ParticleGlowScale, 0.35f);
+            try
+            {
+                foreach (var inst in scenarioVfxThisFrame)
+                    RenderParticleEffect(inst);
+            }
+            finally
+            {
+                ParticleGlowScale = prevGlow;
+                scenarioVfxThisFrame.Clear();
+                shaders.SetDefaultBlendState(context);
+            }
         }
 
         public void RenderVehicle(Vehicle vehicle, ClipMapEntry? animClip = null)
