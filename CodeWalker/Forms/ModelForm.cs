@@ -134,6 +134,8 @@ namespace CodeWalker.Forms
         bool animsInited = false;
         YcdFile? Ycd;
         ClipMapEntry? AnimClip = null;
+        float AnimPlaybackTime;
+        bool AnimPlaybackLooped = true;
 
         MrfFile? Mrf;
         Ped? MrfPreviewPed;
@@ -304,6 +306,7 @@ namespace CodeWalker.Forms
             formopen = false;
 
             if (Mrf != null && AnimClip != null) AnimClip.OverridePlayTime = false;
+            if (Mrf == null && AnimClip != null) AnimClip.OverridePlayTime = false;
 
             Renderer.DeviceDestroyed();
 
@@ -340,6 +343,7 @@ namespace CodeWalker.Forms
 
                 UpdateParticles(elapsed);
                 UpdateMrfAnimation(elapsed);
+                UpdateAnimPlayback(elapsed);
 
                 Renderer.BeginRender(context);
 
@@ -2282,6 +2286,7 @@ namespace CodeWalker.Forms
             {
                 Ycd = null;
                 AnimClip = null;
+                AnimPlaybackTime = 0.0f;
                 ClipComboBox.Items.Clear();
                 ClipComboBox.Items.Add("");
                 ClipComboBox.SelectedIndex = 0;
@@ -2338,10 +2343,64 @@ namespace CodeWalker.Forms
 
         private void SelectClip(string name)
         {
-            MetaHash cliphash = JenkHash.GenHash(name);
-            ClipMapEntry? cme = null;
-            Ycd?.ClipMap?.TryGetValue(cliphash, out cme);
-            AnimClip = cme;
+            AnimClip = ResolveClipByName(name);
+            ResetAnimPlayback();
+        }
+
+        private ClipMapEntry? ResolveClipByName(string name)
+        {
+            if (Ycd == null || string.IsNullOrWhiteSpace(name)) return null;
+
+            //Clip map keys are often the short-name hash, but not always — fall back like MRF resolution.
+            var clipHash = JenkHash.GenHash(name);
+            if (Ycd.ClipMap != null && Ycd.ClipMap.TryGetValue(clipHash, out var cme) && cme?.Clip != null)
+                return cme;
+
+            var lowerHash = JenkHash.GenHashLowerInvariant(name);
+            if (Ycd.ClipMap != null && Ycd.ClipMap.TryGetValue(lowerHash, out cme) && cme?.Clip != null)
+                return cme;
+
+            return Ycd.ClipMapEntries?.FirstOrDefault(x => x.Clip != null &&
+                (string.Equals(x.Clip.ShortName, name, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(x.Clip.Name, name, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private void ResetAnimPlayback()
+        {
+            AnimPlaybackTime = 0.0f;
+            if (AnimClip == null) return;
+            AnimClip.OverridePlayTime = true;
+            AnimClip.PlayTime = 0.0f;
+        }
+
+        //Model preview uses a local clock so clips start at t=0 when selected.
+        //Wall-clock currentRealTime would instantly clamp non-looped clips that are shorter than how long the form has been open.
+        private void UpdateAnimPlayback(float elapsed)
+        {
+            if (Mrf != null) return; //MRF drives OverridePlayTime itself
+            if (AnimClip?.Clip == null) return;
+
+            var duration = AnimClip.Clip.GetDuration();
+            if (duration > 0.0f)
+            {
+                AnimPlaybackTime += elapsed;
+                if (AnimPlaybackLooped)
+                {
+                    AnimPlaybackTime %= duration;
+                    if (AnimPlaybackTime < 0.0f) AnimPlaybackTime += duration;
+                }
+                else
+                {
+                    AnimPlaybackTime = Math.Clamp(AnimPlaybackTime, 0.0f, duration);
+                }
+            }
+            else
+            {
+                AnimPlaybackTime = 0.0f;
+            }
+
+            AnimClip.OverridePlayTime = true;
+            AnimClip.PlayTime = AnimPlaybackTime;
         }
 
 
@@ -3955,7 +4014,11 @@ namespace CodeWalker.Forms
             if (SuppressClipSelection) return;
             ActiveMrfClip = null;
             SelectClip(ClipComboBox.Text);
-            if (AnimClip != null) AnimClip.OverridePlayTime = false;
+        }
+
+        private void AnimLoopCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            AnimPlaybackLooped = AnimLoopCheckBox.Checked;
         }
 
         private void EnableRootMotionCheckBox_CheckedChanged(object sender, EventArgs e)

@@ -56,6 +56,7 @@
             this.SaveSharedTexturesMenuButton = new System.Windows.Forms.ToolStripMenuItem();
             this.ToolsTabControl = new System.Windows.Forms.TabControl();
             this.ToolsModelsTabPage = new System.Windows.Forms.TabPage();
+            this.AnimLoopCheckBox = new System.Windows.Forms.CheckBox();
             this.EnableRootMotionCheckBox = new System.Windows.Forms.CheckBox();
             this.label22 = new System.Windows.Forms.Label();
             this.ClipComboBox = new System.Windows.Forms.ComboBox();
@@ -381,6 +382,7 @@
             // 
             // ToolsModelsTabPage
             // 
+            this.ToolsModelsTabPage.Controls.Add(this.AnimLoopCheckBox);
             this.ToolsModelsTabPage.Controls.Add(this.EnableRootMotionCheckBox);
             this.ToolsModelsTabPage.Controls.Add(this.label22);
             this.ToolsModelsTabPage.Controls.Add(this.ClipComboBox);
@@ -394,6 +396,20 @@
             this.ToolsModelsTabPage.TabIndex = 0;
             this.ToolsModelsTabPage.Text = "Models";
             this.ToolsModelsTabPage.UseVisualStyleBackColor = true;
+            // 
+            // AnimLoopCheckBox
+            // 
+            this.AnimLoopCheckBox.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.AnimLoopCheckBox.AutoSize = true;
+            this.AnimLoopCheckBox.Checked = true;
+            this.AnimLoopCheckBox.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.AnimLoopCheckBox.Location = new System.Drawing.Point(170, 483);
+            this.AnimLoopCheckBox.Name = "AnimLoopCheckBox";
+            this.AnimLoopCheckBox.Size = new System.Drawing.Size(50, 17);
+            this.AnimLoopCheckBox.TabIndex = 38;
+            this.AnimLoopCheckBox.Text = "Loop";
+            this.AnimLoopCheckBox.UseVisualStyleBackColor = true;
+            this.AnimLoopCheckBox.CheckedChanged += new System.EventHandler(this.AnimLoopCheckBox_CheckedChanged);
             // 
             // EnableRootMotionCheckBox
             // 
@@ -1133,6 +1149,7 @@
         private System.Windows.Forms.ToolStripMenuItem SaveMenuButton;
         private System.Windows.Forms.ToolStripMenuItem SaveAsMenuButton;
         private System.Windows.Forms.SaveFileDialog SaveFileDialog;
+        private System.Windows.Forms.CheckBox AnimLoopCheckBox;
         private System.Windows.Forms.CheckBox EnableRootMotionCheckBox;
         private System.Windows.Forms.Label label22;
         private System.Windows.Forms.ComboBox ClipComboBox;
