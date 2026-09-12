@@ -3475,8 +3475,8 @@ namespace CodeWalker.Rendering
                     {
                         //Use the animated skeleton (already updated above) so frag collision follows clips.
                         var skel = rndbl.Skeleton
-                            ?? fdrawable.Skeleton
-                            ?? fdrawable.OwnerFragment?.Drawable?.Skeleton;
+                            ?? fdrawable.SkeletonData
+                            ?? fdrawable.OwnerFragment?.Drawable?.SkeletonData;
                         var plod = fdrawable.OwnerFragment?.PhysicsLODGroup?.PhysicsLOD1
                             ?? fdrawable.OwnerFragmentPhys?.OwnerFragPhysLod;
 
@@ -3981,7 +3981,7 @@ namespace CodeWalker.Rendering
 
 
 
-        public void RenderCollisionMesh(Bounds? bounds, YmapEntityDef? entity, Skeleton? skeleton = null, FragPhysicsLOD? physLod = null, FragPhysTypeChild? physChild = null)
+        public void RenderCollisionMesh(Bounds? bounds, YmapEntityDef? entity, crSkeletonData? skeleton = null, FragPhysicsLOD? physLod = null, FragPhysTypeChild? physChild = null)
         {
             if (bounds == null) return;
             //enqueue a single collision mesh for rendering.
@@ -4064,7 +4064,7 @@ namespace CodeWalker.Rendering
 
         //Map a BoundComposite child (or single phys-child bound) onto the animated skeleton.
         //At bind pose Anim*BindInv == I so live == rest; while a clip plays the mesh follows the bone.
-        private static Matrix GetAnimatedBoundTransform(Matrix rest, Skeleton? skeleton, FragPhysicsLOD? physLod, FragPhysTypeChild? physChild, int childIndex, Bounds? bound)
+        private static Matrix GetAnimatedBoundTransform(Matrix rest, crSkeletonData? skeleton, FragPhysicsLOD? physLod, FragPhysTypeChild? physChild, int childIndex, Bounds? bound)
         {
             if (skeleton?.BonesMap == null) return rest;
 
