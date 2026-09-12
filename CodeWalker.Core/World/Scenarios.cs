@@ -2313,6 +2313,9 @@ namespace CodeWalker.World
         public MetaHash VehicleModelSetHash { get; set; }
         public string ConditionalAnimsGroupName { get; set; } = string.Empty;
         public MetaHash ConditionalAnimsGroupHash { get; set; }
+        public string PropName { get; set; } = string.Empty;
+        public Vector3 SpawnPropOffset { get; set; }
+        public Quaternion SpawnPropRotation { get; set; } = Quaternion.Identity;
 
 
         public virtual void Load(XmlNode node)
@@ -2322,6 +2325,11 @@ namespace CodeWalker.World
             NameLower = Name.ToLowerInvariant();
             NameHash = JenkHash.GenHash(NameLower);
 
+            PropName = Xml.GetChildInnerText(node, "PropName") ?? string.Empty;
+            SpawnPropOffset = Xml.GetChildVector3Attributes(node, "SpawnPropOffset");
+            var sprotr = Xml.GetChildVector4Attributes(node, "SpawnPropRotation");
+            if (sprotr != Vector4.Zero)
+                SpawnPropRotation = new Quaternion(sprotr);
 
             if (IsVehicle)
             {
@@ -2349,9 +2357,24 @@ namespace CodeWalker.World
             return Name;
         }
     }
+    [TypeConverter(typeof(ExpandableObjectConverter))] public class ScenarioVfxDef
+    {
+        public string Name { get; set; } = string.Empty;
+        public string FxName { get; set; } = string.Empty;
+        public Vector3 OffsetPosition { get; set; }
+        public Vector3 EulerRotation { get; set; }
+        public ushort BoneId { get; set; }
+        public string BoneTag { get; set; } = string.Empty;
+        public float Scale { get; set; } = 1.0f;
+
+        public override string ToString() => string.IsNullOrEmpty(Name) ? FxName : $"{Name} ({FxName})";
+    }
+
     [TypeConverter(typeof(ExpandableObjectConverter))] public class ScenarioTypePlayAnims : ScenarioType
     {
         public List<string> BaseAnimClipSets { get; set; } = new List<string>();
+        public List<string> PropSets { get; set; } = new List<string>();
+        public List<ScenarioVfxDef> VfxDefs { get; set; } = new List<ScenarioVfxDef>();
 
         public override void Load(XmlNode node)
         {
@@ -2371,6 +2394,27 @@ namespace CodeWalker.World
                     }
                 }
             }
+
+            // PropSet on each ConditionalAnims item (e.g. COFFEECUPS)
+            var propSetNodes = node.SelectNodes("ConditionalAnimsGroup/ConditionalAnims/Item/PropSet");
+            if (propSetNodes != null)
+            {
+                foreach (XmlNode propSetNode in propSetNodes)
+                {
+                    var propSetName = propSetNode.InnerText?.Trim();
+                    if (!string.IsNullOrEmpty(propSetName) &&
+                        !propSetName.Equals("NULL", StringComparison.OrdinalIgnoreCase) &&
+                        !PropSets.Contains(propSetName))
+                    {
+                        PropSets.Add(propSetName);
+                        JenkIndex.Ensure(propSetName);
+                        JenkIndex.Ensure(propSetName.ToLowerInvariant());
+                    }
+                }
+            }
+
+            var animItems = node.SelectNodes("ConditionalAnimsGroup/ConditionalAnims/Item");
+            ScenarioVfxParsing.AppendFromAnimItems(animItems, VfxDefs);
         }
     }
 
@@ -2484,6 +2528,8 @@ namespace CodeWalker.World
         public string Name { get; set; } = string.Empty;
         public string NameLower { get; set; } = string.Empty;
         public List<string> BaseAnimClipSets { get; set; } = new List<string>();
+        public List<string> PropSets { get; set; } = new List<string>();
+        public List<ScenarioVfxDef> VfxDefs { get; set; } = new List<ScenarioVfxDef>();
 
 
         public void Load(XmlNode node)
@@ -2511,13 +2557,77 @@ namespace CodeWalker.World
                             }
                         }
                     }
+
+                    var propSetName = Xml.GetChildInnerText(animNode, "PropSet");
+                    if (!string.IsNullOrEmpty(propSetName) &&
+                        !propSetName.Equals("NULL", StringComparison.OrdinalIgnoreCase) &&
+                        !PropSets.Contains(propSetName))
+                    {
+                        PropSets.Add(propSetName);
+                        JenkIndex.Ensure(propSetName);
+                        JenkIndex.Ensure(propSetName.ToLowerInvariant());
+                    }
                 }
+
+                ScenarioVfxParsing.AppendFromAnimItems(conditionalAnimsNodes, VfxDefs);
             }
         }
 
         public override string ToString()
         {
             return Name;
+        }
+    }
+
+    internal static class ScenarioVfxParsing
+    {
+        public static void AppendFromAnimItems(XmlNodeList? animItems, List<ScenarioVfxDef> target)
+        {
+            if (animItems == null || target == null) return;
+
+            foreach (XmlNode animNode in animItems)
+            {
+                var vfxItems = animNode.SelectNodes("VFXData/Item");
+                if (vfxItems == null) continue;
+
+                foreach (XmlNode vfxNode in vfxItems)
+                {
+                    var fxName = Xml.GetChildInnerText(vfxNode, "fxName")?.Trim();
+                    if (string.IsNullOrEmpty(fxName)) continue;
+
+                    var def = new ScenarioVfxDef
+                    {
+                        Name = Xml.GetChildInnerText(vfxNode, "Name")?.Trim() ?? string.Empty,
+                        FxName = fxName,
+                        OffsetPosition = Xml.GetChildVector3Attributes(vfxNode, "offsetPosition"),
+                        EulerRotation = Xml.GetChildVector3Attributes(vfxNode, "eulerRotation"),
+                        BoneTag = Xml.GetChildInnerText(vfxNode, "boneTag")?.Trim() ?? string.Empty,
+                        Scale = Xml.GetChildFloatAttribute(vfxNode, "scale", "value"),
+                    };
+                    if (def.Scale <= 0.0001f) def.Scale = 1.0f;
+
+                    if (!string.IsNullOrEmpty(def.BoneTag) &&
+                        Enum.TryParse(def.BoneTag, true, out eAnimBoneTag boneTag) &&
+                        boneTag != eAnimBoneTag.BONETAG_INVALID)
+                    {
+                        def.BoneId = (ushort)(int)boneTag;
+                    }
+
+                    // Prefer first ConditionalAnims item's defs; skip exact duplicates.
+                    if (!target.Any(d =>
+                            d.FxName.Equals(def.FxName, StringComparison.OrdinalIgnoreCase) &&
+                            d.BoneId == def.BoneId &&
+                            d.OffsetPosition == def.OffsetPosition))
+                    {
+                        target.Add(def);
+                        JenkIndex.Ensure(def.FxName);
+                        JenkIndex.Ensure(def.FxName.ToLowerInvariant());
+                    }
+                }
+
+                // Only take VFX from the first ConditionalAnims item (same as PropSet preview).
+                if (target.Count > 0) break;
+            }
         }
     }
 

@@ -2700,6 +2700,8 @@ namespace CodeWalker
 
                 Renderer.RenderQueued();
 
+                Renderer.RenderScenarioParticleEffects();
+
                 Renderer.RenderBounds(SelectionMode);
 
                 Renderer.RenderSelectionGeometry(SelectionMode);

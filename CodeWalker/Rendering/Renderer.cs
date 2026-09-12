@@ -97,6 +97,24 @@ namespace CodeWalker.Rendering
         public Dictionary<uint, YmapEntityDef> HideEntities = new Dictionary<uint, YmapEntityDef>();//dictionary of entities to hide, for cutscenes to use
 
         private Dictionary<MetaHash, Ped> ScenarioPeds = new Dictionary<MetaHash, Ped>();//cache for scenario ped models
+        private ClipMapEntry? scenarioAnimClipLast;
+        private double scenarioAnimStartTime;
+        private readonly YmapEntityDef scenarioPropEntity = new(); // reuse for scenario prop preview
+        // Prefer physics/hand helpers, then skeletal hands.
+        private static readonly ushort[] ScenarioPropHandBoneIds =
+        {
+            28422, // PH_R_Hand
+            60309, // PH_L_Hand
+            57005, // SKEL_R_Hand
+            18905, // SKEL_L_Hand
+        };
+
+        private YptFile? scenarioCoreYpt;
+        private bool scenarioCoreYptTried;
+        private MetaHash scenarioVfxPointKey;
+        private readonly Dictionary<string, ParticleEffectInst> scenarioVfxCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<ParticleEffectInst> scenarioVfxThisFrame = new();
+        private readonly List<ScenarioVfxDef> scenarioVfxDefsScratch = new();
 
         public bool ShowScriptedYmaps = true;
         public List<YmapFile> VisibleYmaps = new List<YmapFile>(128);
@@ -314,6 +332,8 @@ namespace CodeWalker.Rendering
             renderskeletonlist.Clear();
 
             HideEntities.Clear();
+
+            scenarioVfxThisFrame.Clear();
         }
 
         public void RenderSkyAndClouds()
@@ -3735,6 +3755,10 @@ namespace CodeWalker.Rendering
                 // Try to load scenario-specific animation
                 string? scenarioTypeName = null;
                 string? clipDictName = null;
+                string? propSetName = null;
+                string? propName = null;
+                Vector3 spawnPropOffset = Vector3.Zero;
+                Quaternion spawnPropRotation = Quaternion.Identity;
 
                 if (point?.Type != null)
                 {
@@ -3744,10 +3768,20 @@ namespace CodeWalker.Rendering
                     // Get the scenario type name for sitting detection
                     scenarioTypeName = JenkIndex.TryGetString(point.Type.NameHash);
 
-                    // Check if this is a ScenarioTypePlayAnims with direct BaseAnimClipSets
-                    if (!point.Type.IsGroup && point.Type.Type is ScenarioTypePlayAnims playAnimsType && playAnimsType.BaseAnimClipSets != null && playAnimsType.BaseAnimClipSets.Count > 0)
+                    if (point.Type.Type != null)
                     {
-                        clipSetNames = playAnimsType.BaseAnimClipSets;
+                        propName = point.Type.Type.PropName;
+                        spawnPropOffset = point.Type.Type.SpawnPropOffset;
+                        spawnPropRotation = point.Type.Type.SpawnPropRotation;
+                    }
+
+                    // Check if this is a ScenarioTypePlayAnims with direct BaseAnimClipSets
+                    if (!point.Type.IsGroup && point.Type.Type is ScenarioTypePlayAnims playAnimsType)
+                    {
+                        if (playAnimsType.BaseAnimClipSets != null && playAnimsType.BaseAnimClipSets.Count > 0)
+                            clipSetNames = playAnimsType.BaseAnimClipSets;
+                        if (playAnimsType.PropSets != null && playAnimsType.PropSets.Count > 0)
+                            propSetName = playAnimsType.PropSets[0];
                     }
                     // Otherwise try ConditionalAnimsGroup
                     else
@@ -3760,7 +3794,20 @@ namespace CodeWalker.Rendering
                             {
                                 clipSetNames = animGroup.BaseAnimClipSets;
                             }
+                            if (animGroup?.PropSets != null && animGroup.PropSets.Count > 0)
+                            {
+                                propSetName = animGroup.PropSets[0];
+                            }
                         }
+                    }
+
+                    // When PlayAnims embeds ConditionalAnimsGroup, also try group lookup by name
+                    if (string.IsNullOrEmpty(propSetName) && point.Type.Type != null &&
+                        point.Type.Type.ConditionalAnimsGroupHash != 0 && stypes != null)
+                    {
+                        var animGroup = stypes.GetAnimGroup(point.Type.Type.ConditionalAnimsGroupHash);
+                        if (animGroup?.PropSets != null && animGroup.PropSets.Count > 0)
+                            propSetName = animGroup.PropSets[0];
                     }
 
                     if (clipSetNames != null && clipSetNames.Count > 0 && stypes != null)
@@ -3850,12 +3897,318 @@ namespace CodeWalker.Rendering
                 ped.RenderEntity.SetPosition(pos);
                 ped.RenderEntity.SetOrientation(ori);
 
-                // Update animation clip
-                ped.AnimClip = animClip;
+                // Drive a local playback clock so scenario preview animates.
+                // Wall-clock currentRealTime clamps non-looped "base" clips to the end pose immediately.
+                bool prevOverride = false;
+                float prevPlayTime = 0.0f;
+                if (animClip?.Clip != null)
+                {
+                    if (!ReferenceEquals(animClip, scenarioAnimClipLast))
+                    {
+                        scenarioAnimClipLast = animClip;
+                        scenarioAnimStartTime = currentRealTime;
+                    }
 
-                // Render the ped with all its components and animation
+                    prevOverride = animClip.OverridePlayTime;
+                    prevPlayTime = animClip.PlayTime;
+
+                    var duration = animClip.Clip.GetDuration();
+                    float playTime = 0.0f;
+                    if (duration > 0.0f)
+                    {
+                        playTime = (float)((currentRealTime - scenarioAnimStartTime) % duration);
+                        if (playTime < 0.0f) playTime += duration;
+                    }
+                    animClip.OverridePlayTime = true;
+                    animClip.PlayTime = playTime;
+                }
+                else
+                {
+                    scenarioAnimClipLast = null;
+                }
+
+                ped.AnimClip = animClip;
                 RenderPed(ped);
+
+                // Restore shared ClipMapEntry flags so world/other viewers keep using wall-clock time.
+                if (animClip != null)
+                {
+                    animClip.OverridePlayTime = prevOverride;
+                    animClip.PlayTime = prevPlayTime;
+                }
+
+                // Render scenario props (coffee cup, phone, etc.) from PropSet / PropName.
+                RenderScenarioProps(ped, pos, ori, propSetName, propName, spawnPropOffset, spawnPropRotation);
+
+                // Render scenario VFX (cigarette smoke, leaf blower, etc.) from VFXData.
+                RenderScenarioVfx(ped, pos, ori, point);
             }
+        }
+
+        private void RenderScenarioProps(Ped ped, Vector3 pedPos, Quaternion pedOri,
+            string? propSetName, string? propName, Vector3 spawnOffset, Quaternion spawnRotation)
+        {
+            var models = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(propName) &&
+                !propName.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                models.Add(propName.Trim());
+            }
+
+            var stypes = Scenarios.ScenarioTypes;
+            if (!string.IsNullOrWhiteSpace(propSetName) && stypes != null)
+            {
+                var setHash = JenkHash.GenHashLowerInvariant(propSetName.Trim());
+                var propSet = stypes.GetPropSet(setHash);
+                if (propSet?.Models != null)
+                {
+                    foreach (var m in propSet.Models)
+                    {
+                        if (!string.IsNullOrEmpty(m.NameLower) && !models.Contains(m.NameLower))
+                            models.Add(m.NameLower);
+                    }
+                }
+            }
+
+            if (models.Count == 0) return;
+
+            // Prefer attaching to an animated hand bone; fall back to ped pose + SpawnPropOffset.
+            Vector3 propPos = pedPos;
+            Quaternion propOri = pedOri;
+            bool attachedToBone = false;
+
+            if (ped.Skeleton?.BonesMap != null)
+            {
+                foreach (var boneId in ScenarioPropHandBoneIds)
+                {
+                    if (!ped.Skeleton.BonesMap.TryGetValue(boneId, out var bone)) continue;
+                    var pedWorld = Matrix.AffineTransformation(1.0f, pedOri, pedPos);
+                    var world = bone.AnimTransform * pedWorld;
+                    propPos = world.TranslationVector;
+                    propOri = Quaternion.RotationMatrix(world);
+                    attachedToBone = true;
+                    break;
+                }
+            }
+
+            if (!attachedToBone)
+            {
+                if (spawnOffset != Vector3.Zero)
+                    propPos = pedPos + Vector3.Transform(spawnOffset, pedOri);
+                if (spawnRotation != Quaternion.Identity && spawnRotation != Quaternion.Zero)
+                    propOri = Quaternion.Normalize(spawnRotation * pedOri);
+            }
+
+            foreach (var modelName in models)
+            {
+                var hash = JenkHash.GenHashLowerInvariant(modelName);
+                JenkIndex.Ensure(modelName.ToLowerInvariant());
+
+                var arch = gameFileCache.GetArchetype(hash);
+                var drawable = gameFileCache.TryGetDrawable(arch);
+                if (drawable == null)
+                {
+                    var ydr = gameFileCache.GetYdr(hash);
+                    if (ydr?.Loaded == true)
+                        drawable = ydr.Drawable;
+                }
+                if (drawable == null) continue;
+
+                scenarioPropEntity.SetPosition(propPos);
+                scenarioPropEntity.SetOrientation(propOri);
+                RenderDrawable(drawable, arch, scenarioPropEntity, hash);
+                break; // one prop is enough for preview
+            }
+        }
+
+        private void RenderScenarioVfx(Ped ped, Vector3 pedPos, Quaternion pedOri, MCScenarioPoint? point)
+        {
+            scenarioVfxDefsScratch.Clear();
+            CollectScenarioVfxDefs(point, scenarioVfxDefsScratch);
+            if (scenarioVfxDefsScratch.Count == 0) return;
+
+            var ypt = EnsureScenarioCoreYpt();
+            if (ypt?.AllEffects == null || ypt.AllEffects.Length == 0) return;
+
+            ParticleClipRegions.EnsureLoaded(gameFileCache);
+
+            MetaHash pointKey = point?.Type?.NameHash ?? 0;
+            if (pointKey != scenarioVfxPointKey)
+            {
+                scenarioVfxPointKey = pointKey;
+                scenarioVfxCache.Clear();
+            }
+
+            var pedWorld = Matrix.AffineTransformation(1.0f, pedOri, pedPos);
+
+            foreach (var def in scenarioVfxDefsScratch)
+            {
+                if (!scenarioVfxCache.TryGetValue(def.FxName, out var inst))
+                {
+                    var rule = ResolveScenarioParticleRule(ypt, def.FxName);
+                    if (rule == null) continue;
+                    inst = new ParticleEffectInst(rule, ypt, gameFileCache) { Playing = true };
+                    scenarioVfxCache[def.FxName] = inst;
+                }
+
+                Vector3 origin = pedPos;
+                if (def.BoneId != 0 && ped.Skeleton?.BonesMap != null &&
+                    ped.Skeleton.BonesMap.TryGetValue(def.BoneId, out var bone))
+                {
+                    var world = bone.AnimTransform * pedWorld;
+                    origin = world.TranslationVector;
+                    if (def.OffsetPosition != Vector3.Zero)
+                    {
+                        var boneOri = Quaternion.RotationMatrix(world);
+                        origin += Vector3.Transform(def.OffsetPosition, boneOri);
+                    }
+                }
+                else if (def.OffsetPosition != Vector3.Zero)
+                {
+                    origin = pedPos + Vector3.Transform(def.OffsetPosition, pedOri);
+                }
+
+                inst.Origin = origin;
+                inst.Playing = true;
+                inst.Update(currentElapsedTime);
+                RenderParticleModels(inst);
+                scenarioVfxThisFrame.Add(inst);
+            }
+        }
+
+        private static void CollectScenarioVfxDefs(MCScenarioPoint? point, List<ScenarioVfxDef> dest)
+        {
+            if (point?.Type == null) return;
+            var stypes = Scenarios.ScenarioTypes;
+
+            if (!point.Type.IsGroup && point.Type.Type is ScenarioTypePlayAnims play &&
+                play.VfxDefs != null && play.VfxDefs.Count > 0)
+            {
+                dest.AddRange(play.VfxDefs);
+                return;
+            }
+
+            var animGroupHash = point.Type.ConditionalAnimsGroupHash;
+            if (animGroupHash == 0 && point.Type.Type != null)
+                animGroupHash = point.Type.Type.ConditionalAnimsGroupHash;
+
+            if (animGroupHash != 0 && stypes != null)
+            {
+                var animGroup = stypes.GetAnimGroup(animGroupHash);
+                if (animGroup?.VfxDefs != null && animGroup.VfxDefs.Count > 0)
+                    dest.AddRange(animGroup.VfxDefs);
+            }
+        }
+
+        private YptFile? EnsureScenarioCoreYpt()
+        {
+            if (scenarioCoreYptTried) return scenarioCoreYpt;
+            scenarioCoreYptTried = true;
+
+            var rpf = gameFileCache?.RpfMan;
+            if (rpf == null) return null;
+
+            string[] paths =
+            {
+                @"update\update.rpf\x64\patch\data\effects\ptfx.rpf\core.ypt",
+                @"x64d.rpf\data\effects\ptfx.rpf\core.ypt",
+            };
+            foreach (var path in paths)
+            {
+                try
+                {
+                    var ypt = rpf.GetFile<YptFile>(path);
+                    if (ypt?.AllEffects != null && ypt.AllEffects.Length > 0)
+                    {
+                        scenarioCoreYpt = ypt;
+                        return scenarioCoreYpt;
+                    }
+                }
+                catch { }
+            }
+
+            // Fallback: any core.ypt under a ptfx archive (prefer non lo/hi variants).
+            try
+            {
+                var coreHash = JenkHash.GenHash("core");
+                RpfFileEntry? best = null;
+                foreach (var entry in rpf.EntryDict.Values)
+                {
+                    if (entry is not RpfFileEntry fe) continue;
+                    if (fe.ShortNameHash != coreHash) continue;
+                    if (!fe.NameLower.EndsWith(".ypt")) continue;
+                    var path = fe.Path.Replace('/', '\\');
+                    if (path.Contains("ptfx_lo", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (best == null ||
+                        path.Contains("ptfx.rpf", StringComparison.OrdinalIgnoreCase))
+                        best = fe;
+                }
+                if (best != null)
+                    scenarioCoreYpt = rpf.GetFile<YptFile>(best);
+            }
+            catch { }
+
+            return scenarioCoreYpt;
+        }
+
+        private static ParticleEffectRule? ResolveScenarioParticleRule(YptFile ypt, string fxName)
+        {
+            if (string.IsNullOrWhiteSpace(fxName)) return null;
+
+            foreach (var candidate in EnumerateScenarioFxNameCandidates(fxName))
+            {
+                var hash = JenkHash.GenHashLowerInvariant(candidate);
+                if (ypt.EffectDict != null && ypt.EffectDict.TryGetValue(hash, out var rule) && rule != null)
+                    return rule;
+
+                if (ypt.AllEffects != null)
+                {
+                    var match = ypt.AllEffects.FirstOrDefault(e =>
+                        e?.Name?.Value != null &&
+                        e.Name.Value.Equals(candidate, StringComparison.OrdinalIgnoreCase));
+                    if (match != null) return match;
+                }
+            }
+
+            // Last resort: suffix match (ANM_GARDNER_PLANT -> ent_anim_gardener_plant).
+            if (ypt.AllEffects != null)
+            {
+                var suffix = fxName;
+                if (suffix.StartsWith("ANM_", StringComparison.OrdinalIgnoreCase))
+                    suffix = suffix.Substring(4);
+                suffix = suffix.ToLowerInvariant().Replace("gardner", "gardener");
+                return ypt.AllEffects.FirstOrDefault(e =>
+                    e?.Name?.Value != null &&
+                    e.Name.Value.Contains(suffix, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return null;
+        }
+
+        private static IEnumerable<string> EnumerateScenarioFxNameCandidates(string fxName)
+        {
+            yield return fxName;
+            yield return fxName.ToLowerInvariant();
+
+            if (fxName.StartsWith("ANM_", StringComparison.OrdinalIgnoreCase))
+            {
+                var rest = fxName.Substring(4).ToLowerInvariant();
+                yield return "ent_anim_" + rest;
+                if (rest.Contains("gardner"))
+                    yield return "ent_anim_" + rest.Replace("gardner", "gardener");
+            }
+        }
+
+        /// <summary>
+        /// Draw scenario ped particle sprites. Call after RenderQueued(), same as ModelForm particles.
+        /// </summary>
+        public void RenderScenarioParticleEffects()
+        {
+            if (scenarioVfxThisFrame.Count == 0) return;
+            foreach (var inst in scenarioVfxThisFrame)
+                RenderParticleEffect(inst);
+            scenarioVfxThisFrame.Clear();
         }
 
         public void RenderVehicle(Vehicle vehicle, ClipMapEntry? animClip = null)
