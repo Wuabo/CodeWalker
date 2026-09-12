@@ -461,7 +461,6 @@ namespace CodeWalker.GameFiles
                     else if (p.Data is TextureBase btex)
                     {
                         btex.VFT = 0;
-                        btex.Unknown_4h = 1;
                         if (btex.G9_Flags == 0) btex.G9_Flags = 0x00260000;
                         //if (btex.G9_SRV == null)//make sure the SRVs for these params exist
                         //{
@@ -1050,7 +1049,7 @@ namespace CodeWalker.GameFiles
                     {
                         var tex = new TextureBase();
                         tex.ReadXml(pnode, string.Empty);//embedded textures will get replaced in grcInstanceData ReadXML
-                        tex.Unknown_32h = 2;
+                        tex.ResourceTypeAndConversionFlags = 2;
                         p.Data = tex;
                     }
                 }
@@ -1769,6 +1768,18 @@ namespace CodeWalker.GameFiles
                 bone.ResetAnimTransform();
             }
             UpdateBoneTransforms();
+        }
+        public void BlendAnimationPose(Vector3[] translations, Quaternion[] rotations, Vector3[] scales, float amount)
+        {
+            amount = Math.Clamp(amount, 0.0f, 1.0f);
+            int count = Math.Min(BonesSorted.Length, Math.Min(translations.Length, Math.Min(rotations.Length, scales.Length)));
+            for (int i = 0; i < count; i++)
+            {
+                var bone = BonesSorted[i];
+                bone.AnimTranslation = Vector3.Lerp(translations[i], bone.AnimTranslation, amount);
+                bone.AnimRotation = Quaternion.Slerp(rotations[i], bone.AnimRotation, amount);
+                bone.AnimScale = Vector3.Lerp(scales[i], bone.AnimScale, amount);
+            }
         }
         public void UpdateBoneTransforms()
         {

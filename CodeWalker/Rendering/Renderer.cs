@@ -1216,7 +1216,7 @@ namespace CodeWalker.Rendering
             else if (poly is BoundPolygonSphere psph)
             {
                 var p1 = pos + (ori.Multiply(psph.Position) * sca);
-                RenderSelectionCircle(p1, psph.sphereRadius * 1.03f, colourval);//enlarge the circle to make it more visible..
+                RenderSelectionCircle(p1, psph.Radius * 1.03f, colourval);//enlarge the circle to make it more visible..
             }
             else if (poly is BoundPolygonCapsule pcap)
             {
@@ -1225,9 +1225,9 @@ namespace CodeWalker.Rendering
                 var a1 = Vector3.Normalize(p2 - p1);
                 var a2 = Vector3.Normalize(a1.GetPerpVec());
                 var a3 = Vector3.Normalize(Vector3.Cross(a1, a2));
-                a1 *= pcap.capsuleRadius;
-                a2 *= pcap.capsuleRadius;
-                a3 *= pcap.capsuleRadius;
+                a1 *= pcap.Radius;
+                a2 *= pcap.Radius;
+                a3 *= pcap.Radius;
                 RenderSelectionBox(p1 - a1, p2 + a1, a2, a3, colourval);
             }
             else if (poly is BoundPolygonBox pbox)
@@ -1250,8 +1250,8 @@ namespace CodeWalker.Rendering
                 var a1 = Vector3.Normalize(p2 - p1);
                 var a2 = Vector3.Normalize(a1.GetPerpVec());
                 var a3 = Vector3.Normalize(Vector3.Cross(a1, a2));
-                a2 *= pcyl.cylinderRadius;
-                a3 *= pcyl.cylinderRadius;
+                a2 *= pcyl.Radius;
+                a3 *= pcyl.Radius;
                 RenderSelectionBox(p1, p2, a2, a3, colourval);
             }
 
@@ -2100,7 +2100,7 @@ namespace CodeWalker.Rendering
                 for (int i = 0; i < renderworldentities.Count; i++)
                 {
                     var ent = renderworldentities[i];
-                    var rndbl = GetArchetypeRenderable(ent.Archetype);
+                    var rndbl = ent.LodManagerRenderable ?? GetArchetypeRenderable(ent.Archetype);
                     ent.LodManagerRenderable = rndbl;
                     if (rndbl != null)
                     {
@@ -2166,6 +2166,11 @@ namespace CodeWalker.Rendering
             expiredPendingRenders.Clear();
 
             RenderWorldYmapExtras();
+
+            for (int i = 0; i < renderworldentities.Count; i++)
+            {
+                renderworldentities[i].LodManagerRenderable = null;
+            }
         }
 
         public void RenderWorld_Orig(Dictionary<MetaHash, YmapFile> renderworldVisibleYmapDict, IEnumerable<Entity>? spaceEnts)
@@ -3353,7 +3358,7 @@ namespace CodeWalker.Rendering
             return res;
         }
 
-        public bool RenderDrawable(rmcDrawable? drawable, Archetype? arche, YmapEntityDef? entity, uint txdHash = 0, TextureDictionary? txdExtra = null, Texture? diffOverride = null, ClipMapEntry? animClip = null, ClothInstance? cloth = null, Expression? expr = null, ClipMapEntry? faceClip = null)
+        public bool RenderDrawable(rmcDrawable? drawable, Archetype? arche, YmapEntityDef? entity, uint txdHash = 0, TextureDictionary? txdExtra = null, Texture? diffOverride = null, ClipMapEntry? animClip = null, ClothInstance? cloth = null, Expression? expr = null, ClipMapEntry? faceClip = null, ClipMapEntry? blendClip = null, float animationBlend = 0.0f, double blendAnimationTime = double.NaN)
         {
             //enqueue a single drawable for rendering.
 
@@ -3381,8 +3386,10 @@ namespace CodeWalker.Rendering
             rndbl.Cloth = cloth;
             // The conditional-opcode correction has been checked against choice_int's merged clips.
             rndbl.Expression = expr;
-            // Separate face overlays still require their own asset-level validation.
-            rndbl.FaceClip = null;
+            rndbl.FaceClip = faceClip;
+            rndbl.BlendClipMapEntry = blendClip;
+            rndbl.AnimationBlend = animationBlend;
+            rndbl.BlendAnimationTime = blendAnimationTime;
 
             return RenderRenderable(rndbl, arche, entity);
         }
@@ -3950,7 +3957,8 @@ namespace CodeWalker.Rendering
 
             if (drawFlag)
             {
-                RenderDrawable(drawable, null, ped.RenderEntity, 0, td, texture, ac, cloth, expr, ped.FaceAnimClip);
+                RenderDrawable(drawable, null, ped.RenderEntity, 0, td, texture, ac, cloth, expr, ped.FaceAnimClip,
+                    ped.BlendAnimClip, ped.AnimBlend, ped.BlendAnimTime);
             }
 
 

@@ -85,9 +85,14 @@ namespace CodeWalker.Rendering
         public bool HasAnims = false;
         public double CurrentAnimTime = double.NaN;
         private ClipMapEntry? LastAnimationClip;
+        private ClipMapEntry? LastBlendAnimationClip;
+        private float LastAnimationBlend = float.NaN;
         private Expression? LastAnimationExpression;
         public YcdFile? ClipDict;
         public ClipMapEntry? ClipMapEntry;
+        public ClipMapEntry? BlendClipMapEntry;
+        public float AnimationBlend;
+        public double BlendAnimationTime = double.NaN;
         public ClipMapEntry? FaceClip;
         private ClipMapEntry? LastFaceClip;
         private readonly ExpressionEvaluator FacialEvaluator = new();
@@ -468,21 +473,24 @@ namespace CodeWalker.Rendering
             }
 
             if (CurrentAnimTime == realTime && ReferenceEquals(LastAnimationClip, ClipMapEntry) &&
+                ReferenceEquals(LastBlendAnimationClip, BlendClipMapEntry) && LastAnimationBlend == AnimationBlend &&
                 ReferenceEquals(LastAnimationExpression, Expression) && ReferenceEquals(LastFaceClip, FaceClip)) return;
-            bool hadAnimation = LastAnimationClip != null;
+            bool hadAnimation = LastAnimationClip != null || LastFaceClip != null || LastAnimationExpression != null;
             LastFaceClip = FaceClip;
             LastAnimationClip = ClipMapEntry;
+            LastBlendAnimationClip = BlendClipMapEntry;
+            LastAnimationBlend = AnimationBlend;
             LastAnimationExpression = Expression;
             CurrentAnimTime = realTime;
 
             EnableRootMotion = ClipMapEntry?.EnableRootMotion ?? false;
 
-            if (ClipMapEntry != null)
+            if (ClipMapEntry != null || FaceClip != null || Expression != null)
             {
                 UpdateAnim(ClipMapEntry); //animate skeleton/models
             }
 
-            if (ClipMapEntry == null && hadAnimation) Skeleton?.ResetBoneTransforms();
+            if (ClipMapEntry == null && FaceClip == null && Expression == null && hadAnimation) Skeleton?.ResetBoneTransforms();
             UpdateBoneTransforms();
 
             foreach (var model in HDModels)
@@ -499,7 +507,7 @@ namespace CodeWalker.Rendering
             }
 
         }
-        private void UpdateAnim(ClipMapEntry cme)
+        private void UpdateAnim(ClipMapEntry? cme)
         {
             // Channels absent from the new clip must not retain a previous facial pose.
             if (Skeleton?.BonesSorted is { } poseBones)
@@ -513,27 +521,45 @@ namespace CodeWalker.Rendering
             RootMotionPosition = Vector3.Zero;
             RootMotionRotation = Quaternion.Identity;
 
-            var clipanim = cme.Clip as ClipAnimation;
-            if (clipanim?.Animation != null)
-            {
-                UpdateAnim(clipanim.Animation, clipanim.GetPlaybackTime(CurrentAnimTime));
-            }
+            var bodyExpressionClip = cme?.Clip as ClipAnimationExpression;
+            var faceExpressionClip = FaceClip?.Clip as ClipAnimationExpression;
+            bool captureExpressionInputs = Expression != null || bodyExpressionClip?.Expressions != null || faceExpressionClip?.Expressions != null;
 
-            var clipanimlist = cme.Clip as ClipAnimationList;
-            if (clipanimlist?.Animations != null)
+            cme?.Clip?.ForEachAnimation(CurrentAnimTime,
+                (animation, time) => UpdateAnim(animation, time, false, captureExpressionInputs));
+            if (bodyExpressionClip?.Expressions != null && Skeleton != null)
+                FacialEvaluator.Evaluate(bodyExpressionClip.Expressions, Skeleton, bodyExpressionClip.GetClipTime(CurrentAnimTime));
+
+            var blend = Math.Clamp(AnimationBlend, 0.0f, 1.0f);
+            var blendBones = Skeleton?.BonesSorted;
+            if (BlendClipMapEntry?.Clip != null && blend > 0.0f && blendBones != null)
             {
-                foreach (var canim in clipanimlist.Animations)
+                var translations = blendBones.Select(x => x.AnimTranslation).ToArray();
+                var rotations = blendBones.Select(x => x.AnimRotation).ToArray();
+                var scales = blendBones.Select(x => x.AnimScale).ToArray();
+                var rootPosition = RootMotionPosition;
+                var rootRotation = RootMotionRotation;
+                foreach (var bone in blendBones)
                 {
-                    if (canim?.Animation == null) continue;
-                    UpdateAnim(canim.Animation, canim.GetPlaybackTime(CurrentAnimTime));
+                    bone.AnimTranslation = bone.DefaultTranslation;
+                    bone.AnimRotation = bone.DefaultRotation;
+                    bone.AnimScale = bone.DefaultScale;
                 }
+                RootMotionPosition = Vector3.Zero;
+                RootMotionRotation = Quaternion.Identity;
+                var blendTime = double.IsNaN(BlendAnimationTime) ? CurrentAnimTime : BlendAnimationTime;
+                BlendClipMapEntry.Clip.ForEachAnimation(blendTime,
+                    (animation, time) => UpdateAnim(animation, time, false, false));
+                Skeleton?.BlendAnimationPose(translations, rotations, scales, blend);
+                RootMotionPosition = Vector3.Lerp(rootPosition, RootMotionPosition, blend);
+                RootMotionRotation = Quaternion.Slerp(rootRotation, RootMotionRotation, blend);
             }
 
-            if (FaceClip?.Clip is ClipAnimation face && face.Animation != null)
-                UpdateAnim(face.Animation, face.GetPlaybackTime(CurrentAnimTime), true);
-            else if (FaceClip?.Clip is ClipAnimationList faces && faces.Animations != null)
-                foreach (var part in faces.Animations)
-                    if (part.Animation != null) UpdateAnim(part.Animation, part.GetPlaybackTime(CurrentAnimTime), true);
+            FaceClip?.Clip?.ForEachAnimation(CurrentAnimTime,
+                (animation, time) => UpdateAnim(animation, time, true, captureExpressionInputs));
+            if (faceExpressionClip?.Expressions != null && Skeleton != null)
+                FacialEvaluator.Evaluate(faceExpressionClip.Expressions, Skeleton, faceExpressionClip.GetClipTime(CurrentAnimTime));
+
             if (Expression != null && Skeleton != null)
                 FacialEvaluator.Evaluate(Expression, Skeleton, (float)CurrentAnimTime);
 
@@ -589,7 +615,7 @@ namespace CodeWalker.Rendering
             }
 
         }
-        private void UpdateAnim(Animation? anim, float t, bool faceOnly = false)
+        private void UpdateAnim(Animation? anim, float t, bool faceOnly = false, bool captureExpressionInputs = false)
         { 
             if (anim == null)
             { return; }
@@ -620,7 +646,7 @@ namespace CodeWalker.Rendering
                 // These are inputs to a YED expression program, not skeletal transforms.
                 // The track table lists inputs/outputs; adjacency does not define a direct binding.
                 // Applying guessed rotations/translations here distorts eyes and mouths.
-                if (Expression != null)
+                if (captureExpressionInputs)
                 {
                     var sample = track is 1 or 6 or 8 or 26 || boneiditem.Type == 1
                         ? anim.EvaluateQuaternion(frame, i, interpolate).ToVector4() : anim.EvaluateVector4(frame, i, interpolate);
@@ -687,21 +713,8 @@ namespace CodeWalker.Rendering
         private void UpdateAnimUV(ClipMapEntry cme, RenderableGeometry? rgeom = null)
         {
 
-            var clipanim = cme.Clip as ClipAnimation;
-            if (clipanim?.Animation != null)
-            {
-                UpdateAnimUV(clipanim.Animation, clipanim.GetPlaybackTime(CurrentAnimTime), rgeom);
-            }
-
-            var clipanimlist = cme.Clip as ClipAnimationList;
-            if (clipanimlist?.Animations != null)
-            {
-                foreach (var canim in clipanimlist.Animations)
-                {
-                    if (canim?.Animation == null) continue;
-                    UpdateAnimUV(canim.Animation, canim.GetPlaybackTime(CurrentAnimTime), rgeom);
-                }
-            }
+            cme.Clip?.ForEachAnimation(CurrentAnimTime,
+                (animation, time) => UpdateAnimUV(animation, time, rgeom));
 
         }
         private void UpdateAnimUV(Animation? anim, float t, RenderableGeometry? rgeom = null)
@@ -2271,9 +2284,9 @@ namespace CodeWalker.Rendering
                 {
                     case BoundPolygonType.Triangle:
                         var ptri = (BoundPolygonTriangle)poly;
-                        p1 = bgeom.GetVertex(ptri.vertIndex1);
-                        p2 = bgeom.GetVertex(ptri.vertIndex2);
-                        p3 = bgeom.GetVertex(ptri.vertIndex3);
+                        p1 = bgeom.GetVertex(ptri.VertexIndex1);
+                        p2 = bgeom.GetVertex(ptri.VertexIndex2);
+                        p3 = bgeom.GetVertex(ptri.VertexIndex3);
                         n1 = Vector3.Normalize(Vector3.Cross(p2 - p1, p3 - p1));
                         AddVertex(p1, n1, colour, rverts, ref curvert);
                         AddVertex(p2, n1, colour, rverts, ref curvert);
@@ -2281,15 +2294,15 @@ namespace CodeWalker.Rendering
                         break;
                     case BoundPolygonType.Sphere:
                         var psph = (BoundPolygonSphere)poly;
-                        rspheres[cursphere].Center = bgeom.GetVertex(psph.sphereIndex);
-                        rspheres[cursphere].Radius = psph.sphereRadius;// * 0.5f;//diameter?
+                        rspheres[cursphere].Center = bgeom.GetVertex(psph.CenterIndex);
+                        rspheres[cursphere].Radius = psph.Radius;// * 0.5f;//diameter?
                         rspheres[cursphere].Colour = colour;
                         cursphere++;
                         break;
                     case BoundPolygonType.Capsule:
                         var bcap = (BoundPolygonCapsule)poly;
-                        p1 = bgeom.GetVertex(bcap.capsuleIndex1);
-                        p2 = bgeom.GetVertex(bcap.capsuleIndex2);
+                        p1 = bgeom.GetVertex(bcap.EndIndex0);
+                        p2 = bgeom.GetVertex(bcap.EndIndex1);
                         a1 = p2 - p1;
                         n1 = Vector3.Normalize(a1);
                         p3 = Vector3.Normalize(n1.GetPerpVec());
@@ -2298,16 +2311,16 @@ namespace CodeWalker.Rendering
                         rcapsules[curcapsule].Point1 = p1;
                         rcapsules[curcapsule].Orientation = q1;
                         rcapsules[curcapsule].Length = a1.Length();
-                        rcapsules[curcapsule].Radius = bcap.capsuleRadius;// * 0.5f;//diameter?
+                        rcapsules[curcapsule].Radius = bcap.Radius;// * 0.5f;//diameter?
                         rcapsules[curcapsule].Colour = colour;
                         curcapsule++;
                         break;
                     case BoundPolygonType.Box:  //(...only 4 inds... = diagonal corners)
                         var pbox = (BoundPolygonBox)poly;
-                        p1 = bgeom.GetVertex(pbox.boxIndex1);
-                        p2 = bgeom.GetVertex(pbox.boxIndex2);
-                        p3 = bgeom.GetVertex(pbox.boxIndex3);
-                        p4 = bgeom.GetVertex(pbox.boxIndex4);
+                        p1 = bgeom.GetVertex(pbox.VertexIndex0);
+                        p2 = bgeom.GetVertex(pbox.VertexIndex1);
+                        p3 = bgeom.GetVertex(pbox.VertexIndex2);
+                        p4 = bgeom.GetVertex(pbox.VertexIndex3);
                         a1 = ((p3 + p4) - (p1 + p2)) * 0.5f;
                         p2 = p1 + a1;
                         p3 = p3 - a1;
@@ -2321,8 +2334,8 @@ namespace CodeWalker.Rendering
                         break;
                     case BoundPolygonType.Cylinder:
                         var pcyl = (BoundPolygonCylinder)poly;
-                        p1 = bgeom.GetVertex(pcyl.cylinderIndex1);
-                        p2 = bgeom.GetVertex(pcyl.cylinderIndex2);
+                        p1 = bgeom.GetVertex(pcyl.EndIndex0);
+                        p2 = bgeom.GetVertex(pcyl.EndIndex1);
                         a1 = p2 - p1;
                         n1 = Vector3.Normalize(a1);
                         p3 = Vector3.Normalize(n1.GetPerpVec());
@@ -2331,7 +2344,7 @@ namespace CodeWalker.Rendering
                         rcylinders[curcylinder].Point1 = p1;
                         rcylinders[curcylinder].Orientation = q2;
                         rcylinders[curcylinder].Length = a1.Length();
-                        rcylinders[curcylinder].Radius = pcyl.cylinderRadius;
+                        rcylinders[curcylinder].Radius = pcyl.Radius;
                         rcylinders[curcylinder].Colour = colour;
                         curcylinder++;
                         break;
