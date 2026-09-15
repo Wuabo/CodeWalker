@@ -3113,9 +3113,7 @@ namespace CodeWalker.Rendering
                                         //dwbl.VertexDecls = dwblcopy.VertexDecls;
                                     }
 
-                                    //Pass animClip: wheel drawables share the fragment skeleton; without it an
-                                    //archetype auto-clip on the wheel renderable can overwrite the preview pose.
-                                    RenderDrawable(dwbl, arch, ent, txdhash, null, null, animClip);
+                                    RenderDrawable(dwbl, arch, ent, txdhash /*, null, null, animClip*/);
 
                                 }
                                 else
