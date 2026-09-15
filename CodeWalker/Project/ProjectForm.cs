@@ -28,11 +28,6 @@ namespace CodeWalker.Project
         public ProjectPanel? PreviewPanel { get; set; }
         public DeleteGrassPanel? DeleteGrassPanel { get; set; }
 
-        /// <summary>Legacy flag; ImGui Project Window migration is paused — keep classic WinForms UI.</summary>
-        public static bool UseImGuiProjectExplorer { get; set; } = false;
-
-        public bool IsImGuiHost { get; private set; }
-
         public GameFileCache GameFileCache { get; private set; }
         public RpfManager? RpfMan { get; private set; }
 
@@ -126,8 +121,6 @@ namespace CodeWalker.Project
         public ProjectForm(WorldForm? worldForm = null)
         {
             WorldForm = worldForm;
-            IsImGuiHost = false;
-            UseImGuiProjectExplorer = false;
 
             InitializeComponent();
 
@@ -276,37 +269,10 @@ namespace CodeWalker.Project
         }
         public void ShowDefaultPanels()
         {
-            EnsureProjectExplorerPanel();
-            if (!IsImGuiHost)
-            {
-                ShowProjectExplorer();
-                ShowWelcomePanel();
-            }
+            ShowProjectExplorer();
+            ShowWelcomePanel();
         }
         public void ShowProjectExplorer()
-        {
-            EnsureProjectExplorerPanel();
-
-            if (IsImGuiHost || UseImGuiProjectExplorer)
-            {
-                if (ProjectExplorer!.DockPanel != null)
-                {
-                    ProjectExplorer.Hide();
-                }
-                return;
-            }
-
-            if (ProjectExplorer!.DockPanel == null)
-            {
-                ProjectExplorer.Show(MainDockPanel, DockState.DockLeft);
-            }
-            else
-            {
-                ProjectExplorer.Show();
-            }
-        }
-
-        private void EnsureProjectExplorerPanel()
         {
             if ((ProjectExplorer == null) || (ProjectExplorer.IsDisposed) || (ProjectExplorer.Disposing))
             {
@@ -314,19 +280,15 @@ namespace CodeWalker.Project
                 ProjectExplorer.OnItemSelected += ProjectExplorer_OnItemSelected;
                 ProjectExplorer.OnItemActivated += ProjectExplorer_OnItemActivated;
                 ProjectExplorer.SetTheme(Theme);
-                ProjectExplorer.LoadProjectTree(CurrentProjectFile);
+                ProjectExplorer.Show(MainDockPanel, DockState.DockLeft);
             }
-        }
-
-        /// <summary>Used by the ImGui Project Window to obtain the tree data source.</summary>
-        public ProjectExplorerPanel? EnsureProjectExplorerForImGui()
-        {
-            EnsureProjectExplorerPanel();
-            return ProjectExplorer;
+            else
+            {
+                ProjectExplorer.Show();
+            }
         }
         public void ShowWelcomePanel()
         {
-            if (IsImGuiHost) return; // Welcome lives in ImGui Project Window
             ShowPreviewPanel(() => { return new WelcomePanel(); });
         }
         public void ShowPreviewPanel<T>(Func<T> createFunc, Action<T>? updateAction = null) where T : ProjectPanel
