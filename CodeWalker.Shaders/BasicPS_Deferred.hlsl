@@ -1,3 +1,4 @@
+#include "EntityAmbient.hlsli"
 #include "MaterialAlpha.hlsli"
 #include "BasicPS.hlsli"
 
@@ -42,12 +43,7 @@ PS_OUTPUT main(VS_OUTPUT input)
         }
         if (EnableTint == 2)
         {
-            //weapon tint
-            float tx = (round(c.a * 255.009995) - 32.0) * 0.007813; //okay R* this is just silly
-            float ty = 0.03125 * 0.5; // //1;//what to use for Y value? cb12[2].w in R* shader
-            float4 c3 = TintPalette.Sample(TextureSS, float2(tx, ty));
-            c.rgb *= c3.rgb;
-            c.a = 1;
+            c = ApplyWeaponPalette(c);
         }
 
         if (IsDistMap) c = float4(c.rgb * 2, (c.r + c.g + c.b) - 1);
@@ -111,6 +107,8 @@ PS_OUTPUT main(VS_OUTPUT input)
         float3 hairColour = ApplyHairMaterial(input, texc0, material);
         if (HairFlags.x != 0) c.rgb = sqrt(max(c.rgb * c.rgb + hairColour, 0));
         spec = EncodeSpecular(material);
+        if (TintPaletteParams.y != 0)
+            c.rgb = sqrt(max(c.rgb * c.rgb + WeaponSecondarySpecular(input, texc0, norm, GlobalLights.LightDir.xyz), 0));
 
     }
 
@@ -131,7 +129,7 @@ PS_OUTPUT main(VS_OUTPUT input)
     output.Diffuse = float4(c.rgb, a.x);
     output.Normal = float4(saturate(norm * 0.5 + 0.5), a.y);
     output.Specular = float4(spec, a.z);
-    float2 irr = EncodeAmbient(input.Colour0.rg);
+    float2 irr = EncodeAmbient(ApplyEntityAmbient(input.Colour0).rg);
     output.Irradiance = float4(irr, (saturate(emiss) + 2 * InteriorFlags.x) / 3, a.w);
 
     return output;
