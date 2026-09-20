@@ -24,9 +24,9 @@ namespace CodeWalker.GameFiles
         public int DataOffset { get; set; }
 
         public bool ChunkIndicesFlag { get { return ((Flags & 1) == 1); } set { Flags = (ushort)((Flags & 0xFFFE) + (value ? 1 : 0)); } }
-        public bool SingleChannelEncryptFlag { get { return ((Flags & 2) == 2); } set { Flags = (ushort)((Flags & 0xFFFD) + (value ? 2 : 0)); } }
+        public bool ContiguousPackingFlag { get { return ((Flags & 2) == 2); } set { Flags = (ushort)((Flags & 0xFFFD) + (value ? 2 : 0)); } }
         public bool MultiChannelFlag { get { return ((Flags & 4) == 4); } set { Flags = (ushort)((Flags & 0xFFFB) + (value ? 4 : 0)); } }
-        public bool MultiChannelEncryptFlag { get { return ((Flags & 8) == 8); } set { Flags = (ushort)((Flags & 0xFFF7) + (value ? 8 : 0)); } }
+        public bool DataEncryptedFlag { get { return ((Flags & 8) == 8); } set { Flags = (ushort)((Flags & 0xFFF7) + (value ? 8 : 0)); } }
 
         public ushort[] ChunkIndices { get; set; } = []; //index of first chunk for each stream
         public AwcChunkInfo[] ChunkInfos { get; set; } = []; // just for browsing convenience really
@@ -158,6 +158,8 @@ namespace CodeWalker.GameFiles
 
         public byte[] Save()
         {
+            if (DataEncryptedFlag && !WholeFileEncrypted && !MultiChannelFlag)
+                BuildStreamInfos(); // Encryption padding must be included in chunk sizes and subsequent offsets.
             MemoryStream s = new();
             DataWriter w = new(s);
 
@@ -320,36 +322,31 @@ namespace CodeWalker.GameFiles
                     var padc = (align - (w.Position % align)) % align;
                     if (padc > 0) w.Write(new byte[padc]);
                 }
-                if (chunk is AwcDataChunk datachunk && (datachunk.Data != null))
+                if (chunk is AwcDataChunk datachunk && (datachunk.Data != null) && DataEncryptedFlag && !WholeFileEncrypted)
                 {
+                    // Encrypt a copy so saving does not alter the loaded audio or encrypt it twice.
+                    var data = (byte[])datachunk.Data.Clone();
                     if (MultiChannelFlag)
                     {
-                        if (MultiChannelEncryptFlag && !WholeFileEncrypted)
+                        var bcount = (int)(MultiChannelSource?.StreamFormatChunk?.BlockCount ?? 0);
+                        var bsize = (int)(MultiChannelSource?.StreamFormatChunk?.BlockSize ?? 0);
+                        for (int b = 0; b < bcount; b++)
                         {
-                            var bcount = (int)(MultiChannelSource?.StreamFormatChunk?.BlockCount ?? 0);
-                            var bsize = (int)(MultiChannelSource?.StreamFormatChunk?.BlockSize ?? 0);
-                            for (int b = 0; b < bcount; b++)
-                            {
-                                int srcoff = b * bsize;
-                                int blen = Math.Max(Math.Min(bsize, datachunk.Data.Length - srcoff), 0);
-                                var bdat = new byte[blen];
-                                Buffer.BlockCopy(datachunk.Data, srcoff, bdat, 0, blen);
-                                Encrypt_RSXXTEA(bdat);
-                                Buffer.BlockCopy(bdat, 0, datachunk.Data, srcoff, blen);
-                            }
+                            int srcoff = b * bsize;
+                            int blen = Math.Max(Math.Min(bsize, data.Length - srcoff), 0);
+                            var bdat = new byte[blen];
+                            Buffer.BlockCopy(data, srcoff, bdat, 0, blen);
+                            Encrypt_RSXXTEA(bdat);
+                            Buffer.BlockCopy(bdat, 0, data, srcoff, blen);
                         }
                     }
                     else
                     {
-                        if (SingleChannelEncryptFlag && !WholeFileEncrypted)
-                        {
-                            if (datachunk.Data.Length % 4 != 0)
-                            {
-                                throw new Exception($"Unable to encrypt data chunk of length {datachunk.Data.Length}: Data to encrypt must be a multiple of 4 bytes long.\nEnsure that PCM streams have an even number of samples, and ADPCM streams have a multiple of 8 samples.");
-                            }
-                            Encrypt_RSXXTEA(datachunk.Data);
-                        }
+                        Array.Resize(ref data, EncryptedDataSize(data.Length));
+                        if (data.Length > 0) Encrypt_RSXXTEA(data);
                     }
+                    w.Write(data);
+                    continue;
                 }
                 chunk.Write(w);
             }
@@ -366,17 +363,17 @@ namespace CodeWalker.GameFiles
             {
                 AwcXml.ValueTag(sb, indent, "ChunkIndices", true.ToString());
             }
-            if (SingleChannelEncryptFlag)
+            if (ContiguousPackingFlag)
             {
-                AwcXml.ValueTag(sb, indent, "SingleChannelEncrypt", true.ToString());
+                AwcXml.ValueTag(sb, indent, "ContiguousPacking", true.ToString());
             }
             if (MultiChannelFlag)
             {
                 AwcXml.ValueTag(sb, indent, "MultiChannel", true.ToString());
             }
-            if (MultiChannelEncryptFlag)
+            if (DataEncryptedFlag)
             {
-                AwcXml.ValueTag(sb, indent, "MultiChannelEncrypt", true.ToString());
+                AwcXml.ValueTag(sb, indent, "DataEncrypted", true.ToString());
             }
             if (WholeFileEncrypted)
             {
@@ -401,9 +398,10 @@ namespace CodeWalker.GameFiles
         {
             Version = (ushort)Xml.GetChildUIntAttribute(node, "Version");
             ChunkIndicesFlag = Xml.GetChildBoolAttribute(node, "ChunkIndices");
-            SingleChannelEncryptFlag = Xml.GetChildBoolAttribute(node, "SingleChannelEncrypt");
+            // Accept legacy XML names, which represented these same header bits.
+            ContiguousPackingFlag = Xml.GetChildBoolAttribute(node, node.SelectSingleNode("ContiguousPacking") != null ? "ContiguousPacking" : "SingleChannelEncrypt");
             MultiChannelFlag = Xml.GetChildBoolAttribute(node, "MultiChannel");
-            MultiChannelEncryptFlag = Xml.GetChildBoolAttribute(node, "MultiChannelEncrypt");
+            DataEncryptedFlag = Xml.GetChildBoolAttribute(node, node.SelectSingleNode("DataEncrypted") != null ? "DataEncrypted" : "MultiChannelEncrypt");
             WholeFileEncrypted = Xml.GetChildBoolAttribute(node, "WholeFileEncrypt");
 
             var snode = node.SelectSingleNode("Streams");
@@ -469,7 +467,7 @@ namespace CodeWalker.GameFiles
                 }
             }
 
-            var issorted = MultiChannelFlag || !SingleChannelEncryptFlag;
+            var issorted = MultiChannelFlag || !ContiguousPackingFlag;
             if (issorted)
             {
                 chunks.Sort((a, b) => b.ChunkInfo?.SortOrder.CompareTo(a.ChunkInfo?.SortOrder ?? 0) ?? -1);
@@ -484,7 +482,7 @@ namespace CodeWalker.GameFiles
             if (Streams == null) return;
             if (StreamInfos == null) return;
 
-            var issorted = MultiChannelFlag || !SingleChannelEncryptFlag;
+            var issorted = MultiChannelFlag || !ContiguousPackingFlag;
 
             var chunklist = ChunkInfos.ToList();
             chunklist.Sort((a, b) => a.Offset.CompareTo(b.Offset));
@@ -726,6 +724,8 @@ namespace CodeWalker.GameFiles
 
         }
 
+        private static int EncryptedDataSize(int size) => size == 0 ? 0 : Math.Max(8, checked(size + 3) & ~3);
+
         public void BuildStreamInfos()
         {
 
@@ -746,6 +746,8 @@ namespace CodeWalker.GameFiles
                 {
                     var chunkinfo = chunk.ChunkInfo;
                     var size = chunk.ChunkSize;
+                    if (chunk is AwcDataChunk && DataEncryptedFlag && !WholeFileEncrypted && !MultiChannelFlag)
+                        size = EncryptedDataSize(size);
                     var align = chunkinfo.Align;
                     if (align > 0)
                     {
@@ -1184,27 +1186,23 @@ namespace CodeWalker.GameFiles
             ExpandChunks();
 
             var filename = Xml.GetChildInnerText(node, "FileName")?.Replace("/", "")?.Replace("\\", "");
-            if (!string.IsNullOrEmpty(filename) && !string.IsNullOrEmpty(wavfolder))
+            if (!string.IsNullOrEmpty(filename))
             {
+                var filepath = Path.Combine(wavfolder, filename);
                 try
                 {
-                    var filepath = Path.Combine(wavfolder, filename);
-                    if (File.Exists(filepath))
-                    {
-                        var fdata = File.ReadAllBytes(filepath);
-                        if (MidiChunk != null)
-                        {
-                            MidiChunk.Data = fdata;
-                        }
-                        else
-                        {
-                            ParseWavFile(fdata);
-                        }
-                    }
+                    if (string.IsNullOrEmpty(wavfolder))
+                        throw new InvalidDataException("An audio folder is required to import referenced files.");
+                    var fdata = File.ReadAllBytes(filepath);
+                    if (MidiChunk != null)
+                        MidiChunk.Data = fdata;
+                    else
+                        ParseWavFile(fdata);
                 }
-                catch
-                { }
-
+                catch (Exception ex)
+                {
+                    throw new InvalidDataException($"Unable to import audio file '{filepath}': {ex.Message}", ex);
+                }
             }
 
         }
@@ -1272,7 +1270,7 @@ namespace CodeWalker.GameFiles
                         int blen = Math.Max(Math.Min(bsize, DataChunk.Data.Length - srcoff), 0);
                         var bdat = new byte[blen];
                         Buffer.BlockCopy(DataChunk.Data, srcoff, bdat, 0, blen);
-                        if (Awc.MultiChannelEncryptFlag && !Awc.WholeFileEncrypted)
+                        if (Awc.DataEncryptedFlag && !Awc.WholeFileEncrypted)
                         {
                             AwcFile.Decrypt_RSXXTEA(bdat);
                         }
@@ -1283,7 +1281,7 @@ namespace CodeWalker.GameFiles
                 }
                 else
                 {
-                    if (Awc.SingleChannelEncryptFlag && !Awc.WholeFileEncrypted)
+                    if (Awc.DataEncryptedFlag && !Awc.WholeFileEncrypted)
                     {
                         AwcFile.Decrypt_RSXXTEA(DataChunk.Data);
                     }
@@ -1376,7 +1374,7 @@ namespace CodeWalker.GameFiles
                 }
 
                 chansmpoffs.Clear();
-                var samplesrem = (int)chaninfo.Samples+1;
+                var samplesrem = (int)chaninfo.Samples;
                 for (int i = 0; i < totsmblockcount; i++)
                 {
 
@@ -1407,6 +1405,19 @@ namespace CodeWalker.GameFiles
 
                 }
 
+            }
+
+            // Shorter channels still need a header in every block. Data is packed
+            // consecutively, so offsets follow the actual preceding channel sizes.
+            foreach (var block in streamblocks)
+            {
+                var startBlock = 0;
+                for (int c = 0; c < chancount; c++)
+                {
+                    var channel = block.Channels[c] ??= new AwcStreamDataChannel();
+                    channel.StartBlock = startBlock;
+                    startBlock += channel.BlockCount;
+                }
             }
 
             StreamBlocks = streamblocks.ToArray();
@@ -1519,6 +1530,11 @@ namespace CodeWalker.GameFiles
             {
                 data = ADPCMCodec.DecodeADPCM(data, SampleCount);
             }
+            if ((codec == AwcCodecType.PCM || codec == AwcCodecType.ADPCM) && SampleCount >= 0 && (long)SampleCount * 2 < data.Length)
+            {
+                // Serialized encryption alignment is not part of the authored PCM audio.
+                data = data[..(SampleCount * 2)];
+            }
 
             return data;
         }
@@ -1593,50 +1609,65 @@ namespace CodeWalker.GameFiles
 
         public void ParseWavFile(byte[] wav)
         {
-            var ms = new MemoryStream(wav);
-            var r = new DataReader(ms);
+            using var ms = new MemoryStream(wav);
+            using var r = new BinaryReader(ms);
+            if (ms.Length < 12 || r.ReadUInt32() != 0x46464952)
+                throw new InvalidDataException("Invalid RIFF .wav header.");
+            long riffEnd = 8L + r.ReadUInt32();
+            if (r.ReadUInt32() != 0x45564157 || riffEnd < 12 || riffEnd > ms.Length)
+                throw new InvalidDataException("Invalid or truncated WAVE file.");
 
-            var RIFF = r.ReadUInt32(); // 0x46464952
-            var wavLength = r.ReadInt32();
-            var WAVE = r.ReadUInt32(); // 0x45564157
-            var fmt_ = r.ReadUInt32(); // 0x20746D66
-            var fmtLength = r.ReadInt32();
-            var formatcodec = r.ReadInt16();
-            var channels = r.ReadInt16();
-            var sampleRate = r.ReadInt32();
-            var byteRate = r.ReadInt32();
-            var blockAlign = r.ReadInt16();
-            var bitsPerSample = r.ReadInt16();
-            var ext2 = (ushort)0;
-            var samplesPerBlock = (ushort)0;
-            if (fmtLength == 20)
+            ushort formatcodec = 0, channels = 0, bitsPerSample = 0, blockAlign = 0;
+            int sampleRate = 0;
+            int dataOffset = -1, datalen = 0;
+            bool hasFormat = false;
+            while (ms.Position < riffEnd)
             {
-                ext2 = r.ReadUInt16();
-                samplesPerBlock = r.ReadUInt16();
+                if (riffEnd - ms.Position < 8)
+                    throw new InvalidDataException("Truncated WAV chunk header.");
+                var tag = r.ReadUInt32();
+                var length = r.ReadUInt32();
+                long chunkEnd = ms.Position + length;
+                long nextChunk = chunkEnd + (length & 1);
+                if (nextChunk > riffEnd)
+                    throw new InvalidDataException("Truncated WAV chunk data.");
+
+                if (tag == 0x20746D66) // fmt
+                {
+                    if (length < 16)
+                        throw new InvalidDataException("Invalid WAV format chunk.");
+                    formatcodec = r.ReadUInt16();
+                    channels = r.ReadUInt16();
+                    sampleRate = r.ReadInt32();
+                    r.ReadUInt32(); // byte rate
+                    blockAlign = r.ReadUInt16();
+                    bitsPerSample = r.ReadUInt16();
+                    hasFormat = true;
+                }
+                else if (tag == 0x61746164 && dataOffset < 0) // data
+                {
+                    dataOffset = (int)ms.Position;
+                    datalen = (int)length;
+                }
+                // Skip format extensions, metadata, and RIFF word padding.
+                ms.Position = nextChunk;
             }
-            var datatag = r.ReadUInt32(); // 0x61746164
-            var datalen = r.ReadInt32();
+
+            if (!hasFormat || dataOffset < 0)
+                throw new InvalidDataException("WAV file must contain fmt and data chunks.");
+            if (formatcodec != 1 || channels != 1 || bitsPerSample != 16)
+                throw new InvalidDataException("Only mono 16-bit PCM .wav files are supported.");
+            if (sampleRate <= 0 || sampleRate > ushort.MaxValue || blockAlign != 2 || datalen % blockAlign != 0)
+                throw new InvalidDataException("Invalid or unsupported WAV sample rate or sample alignment.");
+
+            ms.Position = dataOffset;
             var dataPCM = r.ReadBytes(datalen);
-
-            if (r.Position != r.Length)
-            { }
-
-            if (formatcodec != 1)
-            {
-                throw new Exception("Only PCM format .wav files supported!");
-            }
-            if (channels != 1)
-            {
-                throw new Exception("Only mono .wav files supported!");
-            }
-
-            var sampleCount = datalen * 2; //assume 16bits per sample PCM
+            var sampleCount = datalen / 2;
 
             var codec = StreamFormat?.Codec ?? FormatChunk?.Codec ?? AwcCodecType.PCM;
             if (codec == AwcCodecType.ADPCM)// convert PCM wav to ADPCM where required
             {
                 dataPCM = ADPCMCodec.EncodeADPCM(dataPCM, sampleCount);
-                bitsPerSample = 4;
             }
 
 
@@ -3035,7 +3066,8 @@ namespace CodeWalker.GameFiles
 
         public static byte[] EncodeADPCM(byte[] data, int sampleCount)
         {
-            byte[] dataPCM = new byte[data.Length / 4];
+            // Each 4088-sample block also needs a four-byte predictor header.
+            byte[] dataPCM = new byte[checked((sampleCount + 1) / 2 + ((sampleCount + 4087) / 4088) * 4)];
 
             int predictor = 0, stepIndex = 0;
             int readingOffset = 0, writingOffset = 0, bytesInBlock = 0;
@@ -3106,7 +3138,7 @@ namespace CodeWalker.GameFiles
                 else
                 {
                     var s0 = readSample();
-                    var s1 = readSample();
+                    var s1 = sampleCount > 1 ? readSample() : s0;
                     var b0 = encodeNibble(s0);
                     var b1 = encodeNibble(s1);
                     var b = (b0 & 0x0F) + ((b1 & 0x0F) << 4);

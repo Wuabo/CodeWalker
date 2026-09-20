@@ -442,7 +442,7 @@ namespace CodeWalker.Rendering
             }
             else
             {
-                DXMan.SetDefaultRenderTarget(context);
+                DXMan.SetDefaultRenderTarget(context, encodeLinearColour: true);
             }
 
             Skydome.EnableHDR = hdr;
@@ -488,7 +488,7 @@ namespace CodeWalker.Rendering
             return null;
         }
 
-        public void RenderQueued(DeviceContext context, Camera camera, Vector4 wind)
+        public void RenderQueued(DeviceContext context, Camera camera, Vector4 wind, float timeOfDay)
         {
             GeometryCount = 0;
             Camera = camera;
@@ -545,7 +545,7 @@ namespace CodeWalker.Rendering
             }
             else
             {
-                DXMan.SetDefaultRenderTarget(context);
+                DXMan.SetDefaultRenderTarget(context, encodeLinearColour: true);
             }
 
             for (int i = 0; i < RenderBuckets.Count; i++) //"solid" objects pass
@@ -701,14 +701,14 @@ namespace CodeWalker.Rendering
                 {
                     context.OutputMerger.BlendState = bsAdd; //additive blend for lights...
                     context.OutputMerger.DepthStencilState = dsDisableWriteRev;//only render parts behind or at surface
-                    DefScene.RenderLights(context, camera, RenderLODLights);
+                    DefScene.RenderLights(context, camera, RenderLODLights, timeOfDay);
                 }
 
                 if (RenderLights.Count > 0)
                 {
                     context.OutputMerger.BlendState = bsAdd; //additive blend for lights...
                     context.OutputMerger.DepthStencilState = dsDisableWriteRev;//only render parts behind or at surface
-                    DefScene.RenderLights(context, camera, RenderLights);
+                    DefScene.RenderLights(context, camera, RenderLights, timeOfDay);
                 }
             }
 
@@ -804,10 +804,12 @@ namespace CodeWalker.Rendering
             }
             else if (DefScene != null)
             {
-                DXMan.SetDefaultRenderTarget(context);
+                DXMan.SetDefaultRenderTarget(context, encodeLinearColour: true);
                 DefScene.SSAAPass(context);
             }
 
+            // Screen overlays supply display colours rather than scene lighting.
+            DXMan.SetDefaultRenderTarget(context);
             Basic.Deferred = deferred;
         }
 
@@ -1316,10 +1318,17 @@ namespace CodeWalker.Rendering
     }
 
 
-    public struct ShaderKey
+    public struct ShaderKey : IEquatable<ShaderKey>
     {
         public MetaHash ShaderName;
         public MetaHash ShaderFile;
+
+        public readonly bool Equals(ShaderKey other) =>
+            ShaderName.Hash == other.ShaderName.Hash && ShaderFile.Hash == other.ShaderFile.Hash;
+
+        public override readonly bool Equals(object? obj) => obj is ShaderKey other && Equals(other);
+
+        public override readonly int GetHashCode() => HashCode.Combine(ShaderName.Hash, ShaderFile.Hash);
 
         public override string ToString()
         {

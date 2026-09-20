@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.IO.Enumeration;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -336,7 +337,22 @@ namespace CodeWalker.GameFiles
         //LooseRpfFile and register it, so GameFileCache can fold them in like an extra dlcpack that wins
         //over everything else. Paths get a "fivem\" prefix to keep them out of the real game path space.
 
+        private static readonly HashSet<string> ExtraExcludedFolders = new(StringComparer.OrdinalIgnoreCase)
+        { ".git", ".github", ".githooks", ".claude", "[clothing]", "[peds]" };
+
         public const string ExtraFolderPrefix = "fivem\\";
+
+        public static IEnumerable<string> EnumerateExtraFolderEntries(string root, bool includeDirectories = false)
+        {
+            return new FileSystemEnumerable<string>(root,
+                (ref FileSystemEntry entry) => entry.ToFullPath(),
+                new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = 0, IgnoreInaccessible = false })
+            {
+                ShouldIncludePredicate = (ref FileSystemEntry entry) => !entry.IsDirectory ||
+                    (includeDirectories && !ExtraExcludedFolders.Contains(entry.FileName.ToString())),
+                ShouldRecursePredicate = (ref FileSystemEntry entry) => !ExtraExcludedFolders.Contains(entry.FileName.ToString())
+            };
+        }
 
         private void ScanExtraFolders(Action<string> updateStatus)
         {
@@ -351,7 +367,7 @@ namespace CodeWalker.GameFiles
                 string[] files;
                 try
                 {
-                    files = Directory.GetFiles(root, "*", SearchOption.AllDirectories);
+                    files = EnumerateExtraFolderEntries(root).ToArray();
                 }
                 catch (Exception ex)
                 {

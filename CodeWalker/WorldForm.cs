@@ -2349,6 +2349,7 @@ namespace CodeWalker
         bool renderaudioouterbounds = true;
         List<RelFile> renderaudfilelist = new();
         List<AudioPlacement> renderaudplacementslist = new();
+        List<Vector3> renderaudshorelinevertices = new();
 
         bool MapViewEnabled = false;
         int MapViewDragX = 0;
@@ -3262,6 +3263,19 @@ namespace CodeWalker
             renderaudplacementslist.Clear();
             audiozones.GetPlacements(renderaudfilelist, renderaudplacementslist);
 
+            renderaudshorelinevertices.Clear();
+            lock (water)
+            {
+                foreach (var relfile in renderaudfilelist)
+                {
+                    AudioZones.AddShorelineVertices(relfile, water.WaterQuads, renderaudshorelinevertices);
+                }
+            }
+            uint shorelineColour = (uint)Color.Cyan.ToRgba();
+            for (int i = 0; i < renderaudshorelinevertices.Count; i += 2)
+            {
+                Renderer.RenderSelectionLine(renderaudshorelinevertices[i], renderaudshorelinevertices[i + 1], shorelineColour);
+            }
 
 
             BoundingBox bbox = new();
@@ -7226,17 +7240,19 @@ namespace CodeWalker
             });
         }
 
-        private void SetModsEnabled(bool enable)
+        private void SetAssetSourceEnabled(Func<bool> setEnabled)
         {
             if (!initialised) return;
             Cursor = Cursors.WaitCursor;
+            EnableModsCheckBox.Enabled = false;
+            EnableFiveMResourcesCheckBox.Enabled = false;
             Task.Run(() =>
             {
                 try
                 {
                     lock (Renderer.RenderSyncRoot)
                     {
-                        if (gameFileCache.SetModsEnabled(enable))
+                        if (setEnabled())
                         {
                             UpdateDlcListComboBox(gameFileCache.DlcNameList);
 
@@ -7245,11 +7261,16 @@ namespace CodeWalker
                     }
                     Invoke(new Action(() => {
                         Cursor = Cursors.Default;
+                        EnableModsCheckBox.Enabled = true;
+                        EnableFiveMResourcesCheckBox.Enabled = true;
+                        Settings.Default.EnableMods = gameFileCache.EnableMods;
+                        Settings.Default.EnableFiveMResources = gameFileCache.EnableFiveMResources;
+                        Settings.Default.Save();
                     }));
                 }
                 catch (Exception ex)
                 {
-                    try { Invoke(new Action(() => { Cursor = Cursors.Default; MessageBox.Show($"Error setting mods enabled: {ex.Message}"); })); }
+                    try { Invoke(new Action(() => { Cursor = Cursors.Default; EnableModsCheckBox.Enabled = true; EnableFiveMResourcesCheckBox.Enabled = true; MessageBox.Show($"Error changing enabled resources: {ex.Message}"); })); }
                     catch (ObjectDisposedException) { }
                     catch (Win32Exception) { }
                     catch (InvalidOperationException) { }
@@ -7517,7 +7538,8 @@ namespace CodeWalker
                 if (IsDisposed || IsHandleCreated == false) return;
                 if (InvokeRequired)
                 {
-                    Invoke(new Action(() => { LogError(text); }));
+                    // Rendering can log while holding locks needed by the UI thread.
+                    BeginInvoke(new Action(() => { LogError(text); }));
                 }
                 else
                 {
@@ -7807,6 +7829,7 @@ namespace CodeWalker
             
 
             EnableModsCheckBox.Checked = s.EnableMods;
+            EnableFiveMResourcesCheckBox.Checked = s.EnableFiveMResources;
             DlcLevelComboBox.Text = s.DLC;
             gameFileCache.SelectedDlc = s.DLC;
             EnableDlcCheckBox.Checked = !string.IsNullOrEmpty(s.DLC);
@@ -7869,6 +7892,7 @@ namespace CodeWalker
 
             //additional settings from gamefilecache...
             s.EnableMods = gameFileCache.EnableMods;
+            s.EnableFiveMResources = gameFileCache.EnableFiveMResources;
             s.DLC = gameFileCache.EnableDlc ? gameFileCache.SelectedDlc : "";
 
             s.Save();
@@ -8042,6 +8066,7 @@ namespace CodeWalker
                 {
                     EnableDlcCheckBox.Enabled = true;
                     EnableModsCheckBox.Enabled = true;
+                    EnableFiveMResourcesCheckBox.Enabled = true;
                     HideNorthYanktonCheckBox.Enabled = true;
                     HideCayoPericoCheckBox.Enabled = true;
                     DlcLevelComboBox.Enabled = true;
@@ -10375,14 +10400,30 @@ namespace CodeWalker
 
         private void EnableModsCheckBox_CheckedChanged(object sender, EventArgs e)
         {
-            if (!initialised) return;
+            if (!initialised || EnableModsCheckBox.Checked == gameFileCache.EnableMods) return;
             if (ProjectForm != null)
             {
+                EnableModsCheckBox.Checked = gameFileCache.EnableMods;
                 MessageBox.Show("Please close the Project Window before enabling or disabling mods.");
                 return;
             }
 
-            SetModsEnabled(EnableModsCheckBox.Checked);
+            bool enable = EnableModsCheckBox.Checked;
+            SetAssetSourceEnabled(() => gameFileCache.SetModsEnabled(enable));
+        }
+
+        private void EnableFiveMResourcesCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (!initialised || EnableFiveMResourcesCheckBox.Checked == gameFileCache.EnableFiveMResources) return;
+            if (ProjectForm != null)
+            {
+                EnableFiveMResourcesCheckBox.Checked = gameFileCache.EnableFiveMResources;
+                MessageBox.Show("Please close the Project Window before enabling or disabling FiveM resources.");
+                return;
+            }
+
+            bool enable = EnableFiveMResourcesCheckBox.Checked;
+            SetAssetSourceEnabled(() => gameFileCache.SetFiveMResourcesEnabled(enable));
         }
 
         private void HideNorthYanktonCheckBox_CheckedChanged(object sender, EventArgs e)
