@@ -339,7 +339,7 @@ namespace CodeWalker
             InitFileType(".meta", "Metadata (XML)", 6, FileTypeAction.ViewXml);
             InitFileType(".ymt", "Metadata (Binary)", 6, FileTypeAction.ViewYmt, true);
             InitFileType(".pso", "Metadata (PSO)", 6, FileTypeAction.ViewJPso, true);
-            InitFileType(".gfx", "Scaleform Flash", 7);
+            InitFileType(".gfx", "Scaleform Flash", 7, FileTypeAction.ViewHex, false, true);
             InitFileType(".ynd", "Path Nodes", 8, FileTypeAction.ViewYnd, true);
             InitFileType(".ynv", "Nav Mesh", 9, FileTypeAction.ViewModel, true);
             InitFileType(".yvr", "Vehicle Record", 9, FileTypeAction.ViewYvr, true);
@@ -384,17 +384,17 @@ namespace CodeWalker
             InitSubFileType(".dat", "distantlights.dat", "Distant Lights", 6, FileTypeAction.ViewDistantLights);
             InitSubFileType(".dat", "distantlights_hd.dat", "Distant Lights", 6, FileTypeAction.ViewDistantLights);
         }
-        private void InitFileType(string ext, string name, int imgidx, FileTypeAction defaultAction = FileTypeAction.ViewHex, bool xmlConvertible = false)
+        private void InitFileType(string ext, string name, int imgidx, FileTypeAction defaultAction = FileTypeAction.ViewHex, bool xmlConvertible = false, bool swfConvertible = false)
         {
-            var ft = new FileTypeInfo(ext, name, imgidx, defaultAction, xmlConvertible);
+            var ft = new FileTypeInfo(ext, name, imgidx, defaultAction, xmlConvertible, swfConvertible);
             FileTypes[ext] = ft;
         }
-        private void InitSubFileType(string ext, string subext, string name, int imgidx, FileTypeAction defaultAction = FileTypeAction.ViewHex, bool xmlConvertible = false)
+        private void InitSubFileType(string ext, string subext, string name, int imgidx, FileTypeAction defaultAction = FileTypeAction.ViewHex, bool xmlConvertible = false, bool swfConvertible = false)
         {
             FileTypeInfo? pti = null;
             if (FileTypes.TryGetValue(ext, out pti))
             {
-                var ft = new FileTypeInfo(subext, name, imgidx, defaultAction, xmlConvertible);
+                var ft = new FileTypeInfo(subext, name, imgidx, defaultAction, xmlConvertible, swfConvertible);
                 pti.AddSubType(ft);
             }
         }
@@ -701,6 +701,7 @@ namespace CodeWalker
             bool canview = false;
             bool canedit = false;
             bool canexportxml = false;
+            bool canexportswf = false;
             bool canimport = EditMode && !issearch;// && (CurrentFolder?.RpfFolder != null);
             bool canpaste = EditMode && (CopiedFiles.Count > 0);
 
@@ -722,6 +723,7 @@ namespace CodeWalker
                         isfile = isfile || (file.Folder == null);
                         canview = canview || CanViewFile(file);
                         canexportxml = canexportxml || CanExportXml(file);
+                        canexportswf = canexportswf || CanExportSwf(file);
                         canedit = EditMode && !issearch;
                     }
                 }
@@ -739,11 +741,13 @@ namespace CodeWalker
             EditViewHexMenu.Enabled = isfile;
 
             EditExportXmlMenu.Enabled = canexportxml;
+            EditExportSwfMenu.Enabled = canexportswf;
             EditExtractRawMenu.Enabled = isfile;
 
             EditImportRawMenu.Visible = canimport;
             EditImportFbxMenu.Visible = canimport;
             EditImportXmlMenu.Visible = canimport;
+            EditImportSwfMenu.Visible = canimport;
             EditImportMenuSeparator.Visible = canimport;
 
             EditCopyMenu.Enabled = isfile;
@@ -1694,6 +1698,13 @@ namespace CodeWalker
             return item.FileType.XmlConvertible;
         }
 
+        private bool CanExportSwf(MainListItem? item)
+        {
+            if (item == null) return false;
+            if (item.FileType == null) return false;
+            return item.FileType.SwfConvertible;
+        }
+
 
         private void View(MainListItem item)
         {
@@ -2181,6 +2192,7 @@ namespace CodeWalker
             bool issearch = CurrentFolder?.IsSearchResults ?? false;
             bool canview = false;
             bool canexportxml = false;
+            bool canexportswf = false;
             bool canextract = false;
             bool canimport = EditMode && !issearch;// && isrpffolder;
             bool cancreate = EditMode && !issearch;
@@ -2198,6 +2210,7 @@ namespace CodeWalker
                 isfile = !isfolder;
                 canview = CanViewFile(item);
                 canexportxml = CanExportXml(item);
+                canexportswf = CanExportSwf(item);
                 canedit = EditMode && !issearch;
                 canextract = isfile || (isarchive && !isfilesys);
                 candefrag = isarchive && canedit;
@@ -2208,6 +2221,7 @@ namespace CodeWalker
             ListContextViewHexMenu.Enabled = isfile;
 
             ListContextExportXmlMenu.Enabled = canexportxml;
+            ListContextExportSwfMenu.Enabled = canexportswf;
             ListContextExtractRawMenu.Enabled = canextract;
             ListContextExtractUncompressedMenu.Enabled = isfile;
 
@@ -2215,6 +2229,7 @@ namespace CodeWalker
             ListContextImportRawMenu.Visible = canimport;
             ListContextImportFbxMenu.Visible = canimport;
             ListContextImportXmlMenu.Visible = canimport;
+            ListContextImportSwfMenu.Visible = canimport;
             ListContextImportSeparator.Visible = cancreate;
 
             ListContextCopyMenu.Enabled = isfile;
@@ -2583,6 +2598,115 @@ namespace CodeWalker
                     MessageBox.Show("Errors were encountered:\n" + errstr);
                 }
             }
+        }
+        private void ExportSwf()
+        {
+            if (MainListView.SelectedIndices.Count == 1)
+            {
+                var errorAction = new Action<string>((msg) => MessageBox.Show(msg));
+
+                var idx = MainListView.SelectedIndices[0];
+                if ((idx < 0) || (idx >= CurrentFiles.Count)) return;
+                var file = CurrentFiles[idx];
+                if (file.Folder == null)
+                {
+                    var data = GetFileSwf(file, out var newfn, out var warnings, errorAction);
+                    if (data == null) return;
+
+                    SaveFileDialog.Filter = "Shockwave Flash|*.swf|All Files|*.*";
+                    SaveFileDialog.FileName = newfn;
+                    if (SaveFileDialog.ShowDialog() == DialogResult.OK)
+                    {
+                        var path = SaveFileDialog.FileName;
+                        try
+                        {
+                            File.WriteAllBytes(path, data);
+                            ShowGfxConversionWarnings(warnings, "Export SWF");
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show("Error saving file " + path + ":\n" + ex.ToString());
+                        }
+                    }
+                    SaveFileDialog.Filter = string.Empty;
+                }
+            }
+            else
+            {
+                var folderpath = SelectFolder();
+                if (string.IsNullOrEmpty(folderpath)) return;
+
+                StringBuilder errors = new();
+                var errorAction = new Action<string>((msg) => errors.AppendLine(msg));
+                var allWarnings = new List<string>();
+
+                for (int i = 0; i < MainListView.SelectedIndices.Count; i++)
+                {
+                    var idx = MainListView.SelectedIndices[i];
+                    if ((idx < 0) || (idx >= CurrentFiles.Count)) continue;
+                    var file = CurrentFiles[idx];
+                    if (file.Folder == null)
+                    {
+                        var data = GetFileSwf(file, out var newfn, out var warnings, errorAction);
+                        if (data == null) continue;
+
+                        var path = Path.Combine(folderpath, newfn);
+                        try
+                        {
+                            File.WriteAllBytes(path, data);
+                            foreach (var w in warnings)
+                            {
+                                allWarnings.Add(newfn + ": " + w);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            errors.AppendLine("Error saving file " + path + ":\n" + ex.ToString());
+                        }
+                    }
+                }
+
+                string errstr = errors.ToString();
+                if (!string.IsNullOrEmpty(errstr))
+                {
+                    MessageBox.Show("Errors were encountered:\n" + errstr);
+                }
+                else
+                {
+                    ShowGfxConversionWarnings(allWarnings, "Export SWF");
+                }
+            }
+        }
+        private byte[]? GetFileSwf(MainListItem file, out string newfn, out List<string> warnings, Action<string> errorAction)
+        {
+            newfn = string.Empty;
+            warnings = new List<string>();
+            if (!CanExportSwf(file)) return null;
+
+            var data = GetFileData(file);
+            if (data == null)
+            {
+                errorAction("Unable to extract file: " + file.Path);
+                return null;
+            }
+
+            try
+            {
+                var swf = GfxFile.ToSwf(data, out warnings);
+                newfn = GfxFile.GetSwfFileName(file.Name);
+                return swf;
+            }
+            catch (Exception ex)
+            {
+                errorAction("Unable to convert file to SWF: " + file.Path + "\n" + ex.Message);
+                return null;
+            }
+        }
+        private static void ShowGfxConversionWarnings(IList<string>? warnings, string title)
+        {
+            if (warnings == null || warnings.Count == 0) return;
+            // Always include the YTD note; surface other notes too.
+            MessageBox.Show(string.Join(Environment.NewLine + Environment.NewLine, warnings), title, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         private void ExtractRaw()
         {
@@ -3201,6 +3325,84 @@ namespace CodeWalker
 
                 }
             }
+        }
+        private void ImportSwfDialog()
+        {
+            if (!EditMode) return;
+            if (CurrentFolder == null || CurrentFolder.IsSearchResults) return;
+
+            if (!EnsureCurrentFolderEditable()) return;
+
+            if (!EnsureRpfValidEncryption() && (CurrentFolder.RpfFolder != null)) return;
+
+            OpenFileDialog.Filter = "Flash / Scaleform|*.swf;*.fws;*.cws;*.gfx|SWF Files|*.swf|All Files|*.*";
+            if (OpenFileDialog.ShowDialog(this) != DialogResult.OK) return;
+            ImportSwf(OpenFileDialog.FileNames, false, null);
+            OpenFileDialog.Filter = string.Empty;
+        }
+        private void ImportSwf(string[] fpaths, bool checkEncryption = true, Dictionary<string, RpfDirectoryEntry>? dirdict = null)
+        {
+            if (!EditMode) return;
+            if (CurrentFolder == null || CurrentFolder.IsSearchResults) return;
+
+            if (!EnsureCurrentFolderEditable()) return;
+
+            if (checkEncryption)
+            {
+                if (!EnsureRpfValidEncryption() && (CurrentFolder.RpfFolder != null)) return;
+            }
+
+            var allWarnings = new List<string>();
+
+            foreach (var fpath in fpaths)
+            {
+                try
+                {
+                    if (!File.Exists(fpath))
+                    {
+                        continue;
+                    }
+
+                    var fi = new FileInfo(fpath);
+                    var fname = GfxFile.GetGfxFileName(fi.Name);
+
+                    if (fi.Length > 0x3FFFFFFF)
+                    {
+                        MessageBox.Show("File " + fi.Name + " is too big! Max 1GB supported.", "Unable to import SWF");
+                        continue;
+                    }
+
+                    var raw = File.ReadAllBytes(fpath);
+                    var data = GfxFile.ToGfx(raw, out var warnings);
+                    foreach (var w in warnings)
+                    {
+                        allWarnings.Add(fname + ": " + w);
+                    }
+
+                    if (CurrentFolder.RpfFolder != null)
+                    {
+                        var rpffldr = CurrentFolder.RpfFolder;
+                        if ((dirdict != null) && dirdict.ContainsKey(fpath))
+                        {
+                            rpffldr = dirdict[fpath];
+                        }
+                        RpfFile.CreateFile(rpffldr, fname, data);
+                    }
+                    else if (!string.IsNullOrEmpty(CurrentFolder.FullPath))
+                    {
+                        var outfpath = Path.Combine(CurrentFolder.FullPath, fname);
+                        File.WriteAllBytes(outfpath, data);
+                        CurrentFolder.EnsureFile(outfpath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Unable to import SWF");
+                }
+            }
+
+            RefreshMainListView();
+            ShowGfxConversionWarnings(allWarnings, "Import SWF");
         }
         private void ImportRaw()
         {
@@ -4286,11 +4488,16 @@ namespace CodeWalker
                     return;
                 }
 
-                var xml = files.Where(x => x.EndsWith(".xml") && (x.IndexOf('.') != x.LastIndexOf('.')));
-                var raw = files.Except(xml);
+                var xml = files.Where(x => x.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) && (x.IndexOf('.') != x.LastIndexOf('.')));
+                var swf = files.Where(x =>
+                    x.EndsWith(".swf", StringComparison.OrdinalIgnoreCase) ||
+                    x.EndsWith(".fws", StringComparison.OrdinalIgnoreCase) ||
+                    x.EndsWith(".cws", StringComparison.OrdinalIgnoreCase));
+                var raw = files.Except(xml).Except(swf);
 
                 if (raw.Count() > 0) ImportRaw(raw.ToArray(), false, dirdict);
                 if (xml.Count() > 0) ImportXml(xml.ToArray(), false, dirdict);
+                if (swf.Count() > 0) ImportSwf(swf.ToArray(), false, dirdict);
             }
         }
 
@@ -4485,6 +4692,10 @@ namespace CodeWalker
         {
             ExportXml();
         }
+        private void ListContextExportSwfMenu_Click(object sender, EventArgs e)
+        {
+            ExportSwf();
+        }
 
         private void ListContextExtractRawMenu_Click(object sender, EventArgs e)
         {
@@ -4524,6 +4735,10 @@ namespace CodeWalker
         private void ListContextImportXmlMenu_Click(object sender, EventArgs e)
         {
             ImportXmlDialog();
+        }
+        private void ListContextImportSwfMenu_Click(object sender, EventArgs e)
+        {
+            ImportSwfDialog();
         }
 
         private void ListContextImportRawMenu_Click(object sender, EventArgs e)
@@ -4605,6 +4820,10 @@ namespace CodeWalker
         {
             ExportXml();
         }
+        private void EditExportSwfMenu_Click(object sender, EventArgs e)
+        {
+            ExportSwf();
+        }
 
         private void EditExtractRawMenu_Click(object sender, EventArgs e)
         {
@@ -4624,6 +4843,10 @@ namespace CodeWalker
         private void EditImportXmlMenu_Click(object sender, EventArgs e)
         {
             ImportXmlDialog();
+        }
+        private void EditImportSwfMenu_Click(object sender, EventArgs e)
+        {
+            ImportSwfDialog();
         }
 
         private void EditImportRawMenu_Click(object sender, EventArgs e)
@@ -5183,14 +5406,16 @@ namespace CodeWalker
         public FileTypeAction DefaultAction { get; set; }
         public List<FileTypeInfo> SubTypes { get; set; } = [];
         public bool XmlConvertible { get; set; }
+        public bool SwfConvertible { get; set; }
 
-        public FileTypeInfo(string extension, string name, int imageindex, FileTypeAction defaultAction, bool xmlConvertible)
+        public FileTypeInfo(string extension, string name, int imageindex, FileTypeAction defaultAction, bool xmlConvertible, bool swfConvertible = false)
         {
             Name = name;
             Extension = extension;
             ImageIndex = imageindex;
             DefaultAction = defaultAction;
             XmlConvertible = xmlConvertible;
+            SwfConvertible = swfConvertible;
         }
 
         public void AddSubType(FileTypeInfo t)

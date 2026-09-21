@@ -42,11 +42,13 @@
             this.EditViewHexMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.EditExportXmlMenu = new System.Windows.Forms.ToolStripMenuItem();
+            this.EditExportSwfMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.EditExtractRawMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.EditExtractAllMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
             this.EditImportFbxMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.EditImportXmlMenu = new System.Windows.Forms.ToolStripMenuItem();
+            this.EditImportSwfMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.EditImportRawMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.EditImportMenuSeparator = new System.Windows.Forms.ToolStripSeparator();
             this.EditCopyMenu = new System.Windows.Forms.ToolStripMenuItem();
@@ -123,6 +125,7 @@
             this.ListContextViewHexMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.ListContextExportXmlMenu = new System.Windows.Forms.ToolStripMenuItem();
+            this.ListContextExportSwfMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.ListContextExtractRawMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.ListContextExtractUncompressedMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.ListContextExtractAllMenu = new System.Windows.Forms.ToolStripMenuItem();
@@ -134,6 +137,7 @@
             this.ListContextNewYtdFileMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.ListContextImportFbxMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.ListContextImportXmlMenu = new System.Windows.Forms.ToolStripMenuItem();
+            this.ListContextImportSwfMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.ListContextImportRawMenu = new System.Windows.Forms.ToolStripMenuItem();
             this.ListContextImportSeparator = new System.Windows.Forms.ToolStripSeparator();
             this.ListContextCopyMenu = new System.Windows.Forms.ToolStripMenuItem();
@@ -242,11 +246,13 @@
             this.EditViewHexMenu,
             this.toolStripSeparator3,
             this.EditExportXmlMenu,
+            this.EditExportSwfMenu,
             this.EditExtractRawMenu,
             this.EditExtractAllMenu,
             this.toolStripSeparator4,
             this.EditImportFbxMenu,
             this.EditImportXmlMenu,
+            this.EditImportSwfMenu,
             this.EditImportRawMenu,
             this.EditImportMenuSeparator,
             this.EditCopyMenu,
@@ -294,6 +300,13 @@
             this.EditExportXmlMenu.Text = "Export XML...";
             this.EditExportXmlMenu.Click += new System.EventHandler(this.EditExportXmlMenu_Click);
             // 
+            // EditExportSwfMenu
+            // 
+            this.EditExportSwfMenu.Name = "EditExportSwfMenu";
+            this.EditExportSwfMenu.Size = new System.Drawing.Size(208, 22);
+            this.EditExportSwfMenu.Text = "Export SWF...";
+            this.EditExportSwfMenu.Click += new System.EventHandler(this.EditExportSwfMenu_Click);
+            // 
             // EditExtractRawMenu
             // 
             this.EditExtractRawMenu.Image = ((System.Drawing.Image)(resources.GetObject("EditExtractRawMenu.Image")));
@@ -333,6 +346,14 @@
             this.EditImportXmlMenu.Text = "Import XML...";
             this.EditImportXmlMenu.Visible = false;
             this.EditImportXmlMenu.Click += new System.EventHandler(this.EditImportXmlMenu_Click);
+            // 
+            // EditImportSwfMenu
+            // 
+            this.EditImportSwfMenu.Name = "EditImportSwfMenu";
+            this.EditImportSwfMenu.Size = new System.Drawing.Size(208, 22);
+            this.EditImportSwfMenu.Text = "Import SWF...";
+            this.EditImportSwfMenu.Visible = false;
+            this.EditImportSwfMenu.Click += new System.EventHandler(this.EditImportSwfMenu_Click);
             // 
             // EditImportRawMenu
             // 
@@ -1027,6 +1048,7 @@
             this.ListContextViewHexMenu,
             this.toolStripSeparator2,
             this.ListContextExportXmlMenu,
+            this.ListContextExportSwfMenu,
             this.ListContextExtractRawMenu,
             this.ListContextExtractUncompressedMenu,
             this.ListContextExtractAllMenu,
@@ -1034,6 +1056,7 @@
             this.ListContextNewMenu,
             this.ListContextImportFbxMenu,
             this.ListContextImportXmlMenu,
+            this.ListContextImportSwfMenu,
             this.ListContextImportRawMenu,
             this.ListContextImportSeparator,
             this.ListContextCopyMenu,
@@ -1083,6 +1106,13 @@
             this.ListContextExportXmlMenu.Size = new System.Drawing.Size(208, 22);
             this.ListContextExportXmlMenu.Text = "Export XML...";
             this.ListContextExportXmlMenu.Click += new System.EventHandler(this.ListContextExportXmlMenu_Click);
+            // 
+            // ListContextExportSwfMenu
+            // 
+            this.ListContextExportSwfMenu.Name = "ListContextExportSwfMenu";
+            this.ListContextExportSwfMenu.Size = new System.Drawing.Size(208, 22);
+            this.ListContextExportSwfMenu.Text = "Export SWF...";
+            this.ListContextExportSwfMenu.Click += new System.EventHandler(this.ListContextExportSwfMenu_Click);
             // 
             // ListContextExtractRawMenu
             // 
@@ -1165,6 +1195,13 @@
             this.ListContextImportXmlMenu.Size = new System.Drawing.Size(208, 22);
             this.ListContextImportXmlMenu.Text = "Import XML...";
             this.ListContextImportXmlMenu.Click += new System.EventHandler(this.ListContextImportXmlMenu_Click);
+            // 
+            // ListContextImportSwfMenu
+            // 
+            this.ListContextImportSwfMenu.Name = "ListContextImportSwfMenu";
+            this.ListContextImportSwfMenu.Size = new System.Drawing.Size(208, 22);
+            this.ListContextImportSwfMenu.Text = "Import SWF...";
+            this.ListContextImportSwfMenu.Click += new System.EventHandler(this.ListContextImportSwfMenu_Click);
             // 
             // ListContextImportRawMenu
             // 
@@ -1422,6 +1459,7 @@
         private System.Windows.Forms.ToolStripMenuItem ListContextViewHexMenu;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
         private System.Windows.Forms.ToolStripMenuItem ListContextExportXmlMenu;
+        private System.Windows.Forms.ToolStripMenuItem ListContextExportSwfMenu;
         private System.Windows.Forms.ToolStripMenuItem ListContextExtractAllMenu;
         private System.Windows.Forms.ToolStripSeparator ListContextImportSeparator;
         private System.Windows.Forms.ToolStripMenuItem ListContextCopyPathMenu;
@@ -1431,6 +1469,7 @@
         private System.Windows.Forms.ToolStripMenuItem ListContextCopyFileListMenu;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator5;
         private System.Windows.Forms.ToolStripMenuItem ListContextImportXmlMenu;
+        private System.Windows.Forms.ToolStripMenuItem ListContextImportSwfMenu;
         private System.Windows.Forms.ToolStripMenuItem ListContextImportRawMenu;
         private System.Windows.Forms.ToolStripMenuItem ListContextCopyMenu;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator6;
@@ -1451,10 +1490,12 @@
         private System.Windows.Forms.ToolStripMenuItem EditViewHexMenu;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
         private System.Windows.Forms.ToolStripMenuItem EditExportXmlMenu;
+        private System.Windows.Forms.ToolStripMenuItem EditExportSwfMenu;
         private System.Windows.Forms.ToolStripMenuItem EditExtractRawMenu;
         private System.Windows.Forms.ToolStripMenuItem EditExtractAllMenu;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
         private System.Windows.Forms.ToolStripMenuItem EditImportXmlMenu;
+        private System.Windows.Forms.ToolStripMenuItem EditImportSwfMenu;
         private System.Windows.Forms.ToolStripMenuItem EditImportRawMenu;
         private System.Windows.Forms.ToolStripSeparator EditImportMenuSeparator;
         private System.Windows.Forms.ToolStripMenuItem EditCopyMenu;
