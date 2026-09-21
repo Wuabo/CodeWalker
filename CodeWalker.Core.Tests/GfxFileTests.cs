@@ -93,6 +93,17 @@ public class GfxFileTests
         Assert.Equal(gfx, File.ReadAllBytes(gfxOutPath));
     }
 
+    [Fact]
+    public void InspectReadsBasicHeader()
+    {
+        var gfx = BuildUncompressedMovie("GFX", 8, [0x08, 0x00, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        var info = GfxFile.Inspect(gfx);
+        Assert.Equal("GFX", info.Signature);
+        Assert.Equal(8, info.Version);
+        Assert.Equal(gfx.Length, info.ActualLength);
+        Assert.Equal("demo.ytd", GfxFile.GetCompanionYtdFileName("demo.gfx"));
+    }
+
     private static byte[] BuildUncompressedMovie(string signature, byte version, byte[] bodyAfterHeader)
     {
         var data = new byte[8 + bodyAfterHeader.Length];

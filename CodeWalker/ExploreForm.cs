@@ -339,7 +339,7 @@ namespace CodeWalker
             InitFileType(".meta", "Metadata (XML)", 6, FileTypeAction.ViewXml);
             InitFileType(".ymt", "Metadata (Binary)", 6, FileTypeAction.ViewYmt, true);
             InitFileType(".pso", "Metadata (PSO)", 6, FileTypeAction.ViewJPso, true);
-            InitFileType(".gfx", "Scaleform Flash", 7, FileTypeAction.ViewHex, false, true);
+            InitFileType(".gfx", "Scaleform Flash", 7, FileTypeAction.ViewGfx, false, true);
             InitFileType(".ynd", "Path Nodes", 8, FileTypeAction.ViewYnd, true);
             InitFileType(".ynv", "Nav Mesh", 9, FileTypeAction.ViewModel, true);
             InitFileType(".yvr", "Vehicle Record", 9, FileTypeAction.ViewYvr, true);
@@ -1683,6 +1683,7 @@ namespace CodeWalker
                 case FileTypeAction.ViewAudioWorldSectors:
                 case FileTypeAction.ViewMrf:
                 case FileTypeAction.ViewDistantLights:
+                case FileTypeAction.ViewGfx:
                     return true;
                 case FileTypeAction.ViewHex:
                 default:
@@ -1833,6 +1834,9 @@ namespace CodeWalker
                         break;
                     case FileTypeAction.ViewYpdb:
                         ViewYpdb(name, path, data, fe);
+                        break;
+                    case FileTypeAction.ViewGfx:
+                        ViewGfx(name, path, data, fe);
                         break;
                     case FileTypeAction.ViewHex:
                     default:
@@ -2109,6 +2113,12 @@ namespace CodeWalker
             MetaForm f = new(this);
             f.Show();
             f.LoadMeta(ypdb);
+        }
+        private void ViewGfx(string name, string path, byte[] data, RpfFileEntry e)
+        {
+            GfxForm f = new(this);
+            f.Show();
+            f.LoadGfx(name, path, data, e);
         }
 
         private RpfFileEntry CreateFileEntry(string name, string path, ref byte[] data)
@@ -5456,6 +5466,7 @@ namespace CodeWalker
         ViewDistantLights = 26,
         ViewYpdb = 27,
         ViewAudioWorldSectors = 28,
+        ViewGfx = 29,
     }
 
 
