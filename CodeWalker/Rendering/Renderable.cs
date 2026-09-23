@@ -85,6 +85,7 @@ namespace CodeWalker.Rendering
         public bool HasTransforms;
 
         public bool HasAnims = false;
+        public bool LoopWorldAnimation;
         public double CurrentAnimTime = double.NaN;
         private ClipMapEntry? LastAnimationClip;
         private ClipMapEntry? LastBlendAnimationClip;
@@ -527,10 +528,11 @@ namespace CodeWalker.Rendering
             var faceExpressionClip = FaceClip?.Clip as ClipAnimationExpression;
             bool captureExpressionInputs = Expression != null || bodyExpressionClip?.Expressions != null || faceExpressionClip?.Expressions != null;
 
-            cme?.Clip?.ForEachAnimation(CurrentAnimTime,
+            var bodyTime = GetAnimationTime(cme, LoopWorldAnimation);
+            cme?.Clip?.ForEachAnimation(bodyTime,
                 (animation, time) => UpdateAnim(animation, time, false, captureExpressionInputs));
             if (bodyExpressionClip?.Expressions != null && Skeleton != null)
-                FacialEvaluator.Evaluate(bodyExpressionClip.Expressions, Skeleton, bodyExpressionClip.GetClipTime(CurrentAnimTime));
+                FacialEvaluator.Evaluate(bodyExpressionClip.Expressions, Skeleton, bodyExpressionClip.GetClipTime(bodyTime));
 
             var blend = Math.Clamp(AnimationBlend, 0.0f, 1.0f);
             var blendBones = Skeleton?.BonesSorted;
@@ -712,10 +714,33 @@ namespace CodeWalker.Rendering
 
 
         }
+        private double GetAnimationTime(ClipMapEntry? entry, bool loop)
+        {
+            if (entry?.OverridePlayTime == true) return entry.PlayTime;
+            var duration = entry?.Clip?.GetDuration() ?? 0;
+            // World assets use a shared clock and repeat even without a clip loop flag.
+            return loop && duration > 0 ? CurrentAnimTime % duration : CurrentAnimTime;
+        }
+
         private void UpdateAnimUV(ClipMapEntry cme, RenderableGeometry? rgeom = null)
         {
-
-            cme.Clip?.ForEachAnimation(CurrentAnimTime,
+            var clip = cme.Clip;
+            if (clip == null) return;
+            double clipTime = cme.PlayTime;
+            if (!cme.OverridePlayTime)
+            {
+                float duration = clip.GetDuration();
+                double durationMs = Math.Truncate(duration * 1000.0f);
+                double timeMs = double.IsFinite(CurrentAnimTime) ? Math.Floor(Math.Max(0, CurrentAnimTime) * 1000.0) : 0;
+                if (durationMs > 0)
+                {
+                    if (timeMs > durationMs) timeMs %= durationMs;
+                    float phase = (float)timeMs / (float)durationMs;
+                    clipTime = MathF.Floor(phase * duration * 30.0f) * (1.0f / 30.0f);
+                }
+                else clipTime = 0;
+            }
+            clip.ForEachAnimation(clipTime,
                 (animation, time) => UpdateAnimUV(animation, time, rgeom));
 
         }
@@ -727,8 +752,6 @@ namespace CodeWalker.Rendering
             { return; }
             if (anim.Sequences?.data_items == null)
             { return; }
-
-            bool interpolate = true; //how to know? eg. cs4_14_hickbar_anim shouldn't
 
             var frame = anim.GetFramePosition(t);
 
@@ -743,7 +766,9 @@ namespace CodeWalker.Rendering
                 if ((track != 17) && (track != 18))
                 { continue; }//17 and 18 would be UV0 and UV1
 
-                var v = anim.EvaluateVector4(frame, i, interpolate);
+                // The game interpolates UV channels after quantizing clip time to 30 Hz,
+                // including indirect channels. Atlas transitions are authored in the samples.
+                var v = anim.EvaluateVector4(frame, i, true);
 
                 switch (track)
                 {
@@ -1960,6 +1985,7 @@ namespace CodeWalker.Rendering
         public Buffer? IndexBuffer { get; set; }
         public VertexBufferBinding VBBinding;
         public Vector3 CamRel { get; set; } //verts are in world space, so camrel should just be -campos
+        public Vector3 Scale { get; set; } = Vector3.One;
 
         public override void Init(WaterQuad key)
         {
