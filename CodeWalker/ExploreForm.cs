@@ -321,6 +321,97 @@ namespace CodeWalker
             return FileCache; //return it even though it's probably not inited yet..
         }
 
+        /// <summary>
+        /// YTD files near the currently open explorer folder: this folder and subfolders,
+        /// plus parent folders and sibling folders (common for stream/ydr + stream/*.ytd layouts).
+        /// </summary>
+        public List<MainListItem> GetCurrentFolderYtdItems()
+        {
+            var result = new List<MainListItem>();
+            if (CurrentFolder == null) return result;
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void AddUnique(MainListItem item)
+            {
+                var key = !string.IsNullOrEmpty(item.Path) ? item.Path : item.FullPath;
+                if (string.IsNullOrEmpty(key)) key = item.Name;
+                if (seen.Add(key)) result.Add(item);
+            }
+
+            // Current folder + descendants (e.g. stream/ itself, or ydr/sub/)
+            CollectYtdItems(CurrentFolder, AddUnique);
+
+            // Walk up parents: pick up YTDs sitting next to / above the model folder
+            // e.g. stream/*.ytd while viewing stream/ydr/model.ydr
+            const int maxParentLevels = 3;
+            var child = CurrentFolder;
+            var parent = CurrentFolder.Parent;
+            for (int level = 0; parent != null && level < maxParentLevels; level++)
+            {
+                CollectDirectYtdItems(parent, AddUnique);
+
+                if (parent.Children != null)
+                {
+                    foreach (var sibling in parent.Children)
+                    {
+                        if (ReferenceEquals(sibling, child)) continue;
+                        // Skip nested RPF archives when browsing loose folders
+                        if (sibling.RpfFile != null && parent.RpfFolder == null) continue;
+                        CollectYtdItems(sibling, AddUnique);
+                    }
+                }
+
+                child = parent;
+                parent = parent.Parent;
+            }
+
+            return result;
+        }
+
+        private static void CollectDirectYtdItems(MainTreeFolder folder, Action<MainListItem> add)
+        {
+            foreach (var item in folder.GetListItems())
+            {
+                if (item.Folder != null) continue;
+                if (item.Name.EndsWith(".ytd", StringComparison.OrdinalIgnoreCase))
+                {
+                    add(item);
+                }
+            }
+        }
+
+        private static void CollectYtdItems(MainTreeFolder folder, Action<MainListItem> add)
+        {
+            CollectDirectYtdItems(folder, add);
+
+            if (folder.Children == null) return;
+            foreach (var child in folder.Children)
+            {
+                // Skip nested RPF archives (they're separate containers, not "subfolders" of loose files)
+                if (child.RpfFile != null && folder.RpfFolder == null) continue;
+                CollectYtdItems(child, add);
+            }
+        }
+
+        /// <summary>
+        /// Path used as the base for relative YTD display names (walks up a few parents).
+        /// </summary>
+        public string? GetCurrentFolderPath()
+        {
+            if (CurrentFolder == null) return null;
+            var folder = CurrentFolder;
+            for (int i = 0; i < 3 && folder.Parent != null; i++)
+            {
+                folder = folder.Parent;
+            }
+            return folder.Path;
+        }
+
+        public byte[]? TryGetFileData(MainListItem file)
+        {
+            return GetFileData(file);
+        }
+
         private void InitFileTypes()
         {
             FileTypes = new Dictionary<string, FileTypeInfo>();

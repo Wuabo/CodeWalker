@@ -61,6 +61,8 @@
             this.ClipComboBox = new System.Windows.Forms.ComboBox();
             this.label21 = new System.Windows.Forms.Label();
             this.ClipDictComboBox = new System.Windows.Forms.ComboBox();
+            this.FolderYtdCheckedListBox = new System.Windows.Forms.CheckedListBox();
+            this.FolderYtdLabel = new System.Windows.Forms.Label();
             this.ModelsTreeView = new CodeWalker.WinForms.TreeViewFix();
             this.ToolsMaterialsTabPage = new System.Windows.Forms.TabPage();
             this.SaveSharedTexturesButton = new System.Windows.Forms.Button();
@@ -386,6 +388,8 @@
             this.ToolsModelsTabPage.Controls.Add(this.ClipComboBox);
             this.ToolsModelsTabPage.Controls.Add(this.label21);
             this.ToolsModelsTabPage.Controls.Add(this.ClipDictComboBox);
+            this.ToolsModelsTabPage.Controls.Add(this.FolderYtdCheckedListBox);
+            this.ToolsModelsTabPage.Controls.Add(this.FolderYtdLabel);
             this.ToolsModelsTabPage.Controls.Add(this.ModelsTreeView);
             this.ToolsModelsTabPage.Location = new System.Drawing.Point(4, 22);
             this.ToolsModelsTabPage.Name = "ToolsModelsTabPage";
@@ -453,6 +457,29 @@
             this.ClipDictComboBox.TabIndex = 33;
             this.ClipDictComboBox.TextChanged += new System.EventHandler(this.ClipDictComboBox_TextChanged);
             // 
+            // FolderYtdLabel
+            // 
+            this.FolderYtdLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.FolderYtdLabel.AutoSize = true;
+            this.FolderYtdLabel.Location = new System.Drawing.Point(3, 340);
+            this.FolderYtdLabel.Name = "FolderYtdLabel";
+            this.FolderYtdLabel.Size = new System.Drawing.Size(120, 13);
+            this.FolderYtdLabel.TabIndex = 38;
+            this.FolderYtdLabel.Text = "Folder textures (.ytd):";
+            // 
+            // FolderYtdCheckedListBox
+            // 
+            this.FolderYtdCheckedListBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.FolderYtdCheckedListBox.CheckOnClick = true;
+            this.FolderYtdCheckedListBox.FormattingEnabled = true;
+            this.FolderYtdCheckedListBox.IntegralHeight = false;
+            this.FolderYtdCheckedListBox.Location = new System.Drawing.Point(3, 356);
+            this.FolderYtdCheckedListBox.Name = "FolderYtdCheckedListBox";
+            this.FolderYtdCheckedListBox.Size = new System.Drawing.Size(235, 70);
+            this.FolderYtdCheckedListBox.TabIndex = 39;
+            this.FolderYtdCheckedListBox.ItemCheck += new System.Windows.Forms.ItemCheckEventHandler(this.FolderYtdCheckedListBox_ItemCheck);
+            // 
             // ModelsTreeView
             // 
             this.ModelsTreeView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
@@ -462,7 +489,7 @@
             this.ModelsTreeView.Location = new System.Drawing.Point(0, 3);
             this.ModelsTreeView.Name = "ModelsTreeView";
             this.ModelsTreeView.ShowRootLines = false;
-            this.ModelsTreeView.Size = new System.Drawing.Size(241, 422);
+            this.ModelsTreeView.Size = new System.Drawing.Size(241, 334);
             this.ModelsTreeView.TabIndex = 1;
             this.ModelsTreeView.AfterCheck += new System.Windows.Forms.TreeViewEventHandler(this.ModelsTreeView_AfterCheck);
             this.ModelsTreeView.NodeMouseDoubleClick += new System.Windows.Forms.TreeNodeMouseClickEventHandler(this.ModelsTreeView_NodeMouseDoubleClick);
@@ -1138,6 +1165,8 @@
         private System.Windows.Forms.ComboBox ClipComboBox;
         private System.Windows.Forms.Label label21;
         private System.Windows.Forms.ComboBox ClipDictComboBox;
+        private System.Windows.Forms.CheckedListBox FolderYtdCheckedListBox;
+        private System.Windows.Forms.Label FolderYtdLabel;
         private System.Windows.Forms.CheckBox FragGlassCheckBox;
         private System.Windows.Forms.TabControl OptionsTabControl;
         private System.Windows.Forms.TabPage OptionsRenderTabPage;

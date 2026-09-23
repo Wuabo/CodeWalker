@@ -179,6 +179,10 @@ namespace CodeWalker.Forms
         Archetype? ModelArchetype = null;
         bool EnableRootMotion = false;
 
+        TextureDictionary? ExtraTextureDict = null;
+        readonly Dictionary<string, YtdFile> FolderYtdCache = new(StringComparer.OrdinalIgnoreCase);
+        bool SuppressFolderYtdEvents = false;
+
 
 
         public ModelForm(ExploreForm? ExpForm = null)
@@ -780,7 +784,7 @@ namespace CodeWalker.Forms
                 {
                     ModelArchetype ??= TryGetArchetype(ModelHash);
 
-                    Renderer.RenderDrawable(Ydr.Drawable, ModelArchetype, null, ModelHash, null, null, AnimClip);
+                    Renderer.RenderDrawable(Ydr.Drawable, ModelArchetype, null, ModelHash, ExtraTextureDict, null, AnimClip);
                 }
             }
             else if (Ydd != null)
@@ -794,7 +798,7 @@ namespace CodeWalker.Forms
                         {
                             var arch = TryGetArchetype(kvp.Key);
 
-                            Renderer.RenderDrawable(kvp.Value, arch, null, (Ydd.RpfFileEntry?.ShortNameHash ?? 0), null, null, AnimClip);
+                            Renderer.RenderDrawable(kvp.Value, arch, null, (Ydd.RpfFileEntry?.ShortNameHash ?? 0), ExtraTextureDict, null, AnimClip);
                         }
                     }
                 }
@@ -811,7 +815,7 @@ namespace CodeWalker.Forms
                         {
                             ModelArchetype ??= TryGetArchetype(kvp.Key);
 
-                            Renderer.RenderDrawable(kvp.Value, ModelArchetype, null, kvp.Key, null, null, AnimClip);
+                            Renderer.RenderDrawable(kvp.Value, ModelArchetype, null, kvp.Key, ExtraTextureDict, null, AnimClip);
                         }
                     }
                 }
@@ -826,7 +830,7 @@ namespace CodeWalker.Forms
 
                         ModelArchetype ??= TryGetArchetype(ModelHash);
 
-                        Renderer.RenderFragment(ModelArchetype, null, f, ModelHash, AnimClip);
+                        Renderer.RenderFragment(ModelArchetype, null, f, ModelHash, AnimClip, ExtraTextureDict);
                     }
                 }
             }
@@ -889,6 +893,7 @@ namespace CodeWalker.Forms
             }
 
             UpdateModelsUI(ydr.Drawable);
+            PopulateFolderYtdList();
         }
 
         public void LoadMrf(MrfFile? mrf)
@@ -1705,6 +1710,7 @@ namespace CodeWalker.Forms
             UpdateModelsUI(ydd.Dict);
 
             DetailsPropertyGrid.SelectedObject = ydd;
+            PopulateFolderYtdList();
         }
         public void LoadModel(YftFile? yft)
         {
@@ -1747,6 +1753,7 @@ namespace CodeWalker.Forms
             }
 
             UpdateModelsUI(yft.Fragment?.Drawable, yft.Fragment);
+            PopulateFolderYtdList();
         }
         public void LoadModel(YbnFile? ybn)
         {
@@ -2769,6 +2776,216 @@ namespace CodeWalker.Forms
                 }
             }
         }
+
+        private sealed class FolderYtdListItem(MainListItem item, string displayName)
+        {
+            public MainListItem Item { get; } = item;
+            public override string ToString() => displayName;
+        }
+
+        private void PopulateFolderYtdList()
+        {
+            SuppressFolderYtdEvents = true;
+            try
+            {
+                FolderYtdCheckedListBox.Items.Clear();
+                FolderYtdCache.Clear();
+                ExtraTextureDict = null;
+
+                if (exploreForm == null)
+                {
+                    FolderYtdLabel.Visible = false;
+                    FolderYtdCheckedListBox.Visible = false;
+                    return;
+                }
+
+                var items = exploreForm.GetCurrentFolderYtdItems();
+                FolderYtdLabel.Visible = true;
+                FolderYtdCheckedListBox.Visible = true;
+
+                if (items.Count == 0)
+                {
+                    FolderYtdCheckedListBox.Items.Add("(no .ytd in this folder or subfolders)");
+                    FolderYtdCheckedListBox.Enabled = false;
+                    return;
+                }
+
+                FolderYtdCheckedListBox.Enabled = true;
+                var modelShort = Path.GetFileNameWithoutExtension(FileName ?? string.Empty);
+                var matchedAny = false;
+                var basePath = exploreForm.GetCurrentFolderPath() ?? string.Empty;
+
+                foreach (var item in items.OrderBy(i => GetFolderYtdDisplayName(i, basePath), StringComparer.OrdinalIgnoreCase))
+                {
+                    var shortName = Path.GetFileNameWithoutExtension(item.Name);
+                    var autoCheck = !string.IsNullOrEmpty(modelShort) &&
+                        shortName.Equals(modelShort, StringComparison.OrdinalIgnoreCase);
+                    // also match hi/lod variants: model_hi.ytd for model.ydr, etc.
+                    if (!autoCheck && !string.IsNullOrEmpty(modelShort))
+                    {
+                        autoCheck = shortName.Equals(modelShort + "_hi", StringComparison.OrdinalIgnoreCase)
+                            || modelShort.Equals(shortName + "_hi", StringComparison.OrdinalIgnoreCase);
+                    }
+                    FolderYtdCheckedListBox.Items.Add(new FolderYtdListItem(item, GetFolderYtdDisplayName(item, basePath)), autoCheck);
+                    if (autoCheck) matchedAny = true;
+                }
+
+                // If nothing matched the model name and there's only one YTD, use it.
+                if (!matchedAny && FolderYtdCheckedListBox.Items.Count == 1)
+                {
+                    FolderYtdCheckedListBox.SetItemChecked(0, true);
+                }
+
+                ToolsPanel.Visible = true; // so the folder YTD picker is reachable for addon folders
+            }
+            finally
+            {
+                SuppressFolderYtdEvents = false;
+            }
+
+            RebuildExtraTextureDict();
+        }
+
+        private static string GetFolderYtdDisplayName(MainListItem item, string basePath)
+        {
+            var path = item.Path ?? item.Name;
+            if (!string.IsNullOrEmpty(basePath))
+            {
+                var prefix = basePath.TrimEnd('\\') + "\\";
+                if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return path.Substring(prefix.Length);
+                }
+            }
+            return item.Name;
+        }
+
+        private void FolderYtdCheckedListBox_ItemCheck(object? sender, ItemCheckEventArgs e)
+        {
+            if (SuppressFolderYtdEvents) return;
+            // ItemCheck fires before the check state changes; rebuild after the UI updates.
+            BeginInvoke(new Action(RebuildExtraTextureDict));
+        }
+
+        private void RebuildExtraTextureDict()
+        {
+            var textures = new Dictionary<uint, Texture>();
+
+            for (int i = 0; i < FolderYtdCheckedListBox.Items.Count; i++)
+            {
+                if (!FolderYtdCheckedListBox.GetItemChecked(i)) continue;
+                MainListItem? item = FolderYtdCheckedListBox.Items[i] switch
+                {
+                    FolderYtdListItem wrapper => wrapper.Item,
+                    MainListItem direct => direct,
+                    _ => null
+                };
+                if (item == null) continue;
+
+                var ytd = TryLoadFolderYtd(item);
+                if (ytd?.TextureDict?.Textures?.data_items == null) continue;
+
+                foreach (var tex in ytd.TextureDict.Textures.data_items)
+                {
+                    if (tex == null) continue;
+                    textures[tex.NameHash] = tex;
+                }
+            }
+
+            if (textures.Count == 0)
+            {
+                ExtraTextureDict = null;
+            }
+            else
+            {
+                var dict = new TextureDictionary();
+                dict.BuildFromTextureList(textures.Values.ToList());
+                ExtraTextureDict = dict;
+            }
+
+            InvalidateDrawableTextureLookups();
+        }
+
+        private YtdFile? TryLoadFolderYtd(MainListItem item)
+        {
+            if (FolderYtdCache.TryGetValue(item.Path, out var cached)) return cached;
+            if (exploreForm == null) return null;
+
+            try
+            {
+                var data = exploreForm.TryGetFileData(item);
+                if (data == null || data.Length == 0) return null;
+
+                YtdFile ytd;
+                if (item.File != null)
+                {
+                    ytd = RpfFile.GetFile<YtdFile>(item.File, data);
+                }
+                else
+                {
+                    ytd = new YtdFile();
+                    ytd.Load(data);
+                    if (ytd.RpfFileEntry != null)
+                    {
+                        ytd.RpfFileEntry.Name = item.Name;
+                        ytd.RpfFileEntry.NameLower = item.Name.ToLowerInvariant();
+                        var shortName = Path.GetFileNameWithoutExtension(item.Name).ToLowerInvariant();
+                        ytd.RpfFileEntry.NameHash = JenkHash.GenHash(ytd.RpfFileEntry.NameLower);
+                        ytd.RpfFileEntry.ShortNameHash = JenkHash.GenHash(shortName);
+                        JenkIndex.Ensure(shortName);
+                    }
+                }
+
+                FolderYtdCache[item.Path] = ytd;
+                return ytd;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void InvalidateDrawableTextureLookups()
+        {
+            void Invalidate(rmcDrawable? d)
+            {
+                if (d?.AllModels == null) return;
+                foreach (var model in d.AllModels)
+                {
+                    if (model?.Geometries == null) continue;
+                    foreach (var geom in model.Geometries)
+                    {
+                        geom.UpdateRenderableParameters = true;
+                    }
+                }
+            }
+
+            if (Ydr != null) Invalidate(Ydr.Drawable);
+            if (Ydd?.Drawables != null)
+            {
+                foreach (var d in Ydd.Drawables) Invalidate(d);
+            }
+            if (Yft?.Fragment != null)
+            {
+                var f = Yft.Fragment;
+                Invalidate(f.Drawable);
+                Invalidate(f.DrawableCloth);
+                if (f.DrawableArray?.data_items != null)
+                {
+                    foreach (var d in f.DrawableArray.data_items) Invalidate(d);
+                }
+                var children = f.PhysicsLODGroup?.PhysicsLOD1?.Children?.data_items;
+                if (children != null)
+                {
+                    foreach (var c in children)
+                    {
+                        Invalidate(c.Drawable1);
+                        Invalidate(c.Drawable2);
+                    }
+                }
+            }
+        }
+
         public void UpdateEmbeddedTextures()
         {
             if (Ydr != null)
