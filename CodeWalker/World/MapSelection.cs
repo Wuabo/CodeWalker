@@ -355,6 +355,7 @@ namespace CodeWalker
         public bool CanMarkUndo()
         {
             if (MultipleSelectionItems != null) return true;
+            if ((ArchetypeExtension != null) || (EntityExtension != null)) return true;
             if (EntityDef != null) return true;
             if (CarGenerator != null) return true;
             if (LodLight != null) return true;
@@ -381,6 +382,18 @@ namespace CodeWalker
                     case WidgetMode.Position: return new MultiPositionUndoStep(this, startPos, wf);
                     case WidgetMode.Rotation: return new MultiRotationUndoStep(this, startRot, wf);
                     case WidgetMode.Scale: return new MultiScaleUndoStep(this, startScale, wf);
+                }
+            }
+            else if ((ArchetypeExtension != null) || (EntityExtension != null))
+            {
+                var ext = ArchetypeExtension ?? EntityExtension;
+                switch (mode)
+                {
+                    case WidgetMode.Position: return new ExtensionPositionUndoStep(ext!, EntityDef, startPos, ArchetypeExtension != null, wf);
+                    case WidgetMode.Rotation:
+                        if (ExtensionTransforms.HasOffsetRotation(ext))
+                            return new ExtensionRotationUndoStep(ext!, EntityDef, startRot, ArchetypeExtension != null, wf);
+                        return null;
                 }
             }
             else if (CollisionVertex != null)
@@ -527,6 +540,10 @@ namespace CodeWalker
                 {
                     res = true;
                 }
+                else if ((ArchetypeExtension != null) || (EntityExtension != null))
+                {
+                    res = ExtensionTransforms.TryGetOffsetPosition(ArchetypeExtension ?? EntityExtension, out _);
+                }
                 else if (EntityDef != null)
                 {
                     res = true;
@@ -613,6 +630,12 @@ namespace CodeWalker
                     if (EntityDef != null) return EntityDef.Position + EntityDef.Orientation.Multiply(CollisionBounds.Position);
                     return CollisionBounds.Position;
                 }
+                else if ((ArchetypeExtension != null) || (EntityExtension != null))
+                {
+                    if (ExtensionTransforms.TryGetOffsetPosition(ArchetypeExtension ?? EntityExtension, out var local))
+                        return ExtensionTransforms.LocalToWorld(EntityDef, local);
+                    return EntityDef?.WidgetPosition ?? Vector3.Zero;
+                }
                 else if (EntityDef != null)
                 {
                     return EntityDef.WidgetPosition;
@@ -687,6 +710,13 @@ namespace CodeWalker
                     if (EntityDef != null) return CollisionBounds.Orientation * EntityDef.Orientation;
                     return CollisionBounds.Orientation;
                 }
+                else if ((ArchetypeExtension != null) || (EntityExtension != null))
+                {
+                    var ext = ArchetypeExtension ?? EntityExtension;
+                    if (ExtensionTransforms.TryGetOffsetRotation(ext, out var localRot))
+                        return ExtensionTransforms.LocalToWorld(EntityDef, localRot);
+                    return EntityDef?.WidgetOrientation ?? Quaternion.Identity;
+                }
                 else if (EntityDef != null)
                 {
                     return EntityDef.WidgetOrientation;
@@ -758,6 +788,12 @@ namespace CodeWalker
                 {
                     return WidgetAxis.XYZ;
                 }
+                else if ((ArchetypeExtension != null) || (EntityExtension != null))
+                {
+                    return ExtensionTransforms.HasOffsetRotation(ArchetypeExtension ?? EntityExtension)
+                        ? WidgetAxis.XYZ
+                        : WidgetAxis.None;
+                }
                 else if (EntityDef != null)
                 {
                     return WidgetAxis.XYZ;
@@ -828,6 +864,10 @@ namespace CodeWalker
                 else if (CollisionBounds != null)
                 {
                     return CollisionBounds.Scale;
+                }
+                else if ((ArchetypeExtension != null) || (EntityExtension != null))
+                {
+                    return Vector3.One;
                 }
                 else if (EntityDef != null)
                 {
@@ -1036,6 +1076,14 @@ namespace CodeWalker
                 if (EntityDef != null) newpos = Quaternion.Invert(EntityDef.Orientation).Multiply(newpos - EntityDef.Position);
                 CollisionBounds.Position = newpos;
             }
+            else if ((ArchetypeExtension != null) || (EntityExtension != null))
+            {
+                var ext = ArchetypeExtension ?? EntityExtension;
+                var local = ExtensionTransforms.WorldToLocal(EntityDef, newpos);
+                ExtensionTransforms.TrySetOffsetPosition(ext, local);
+                float size = ExtensionTransforms.GetExtensionBoxSize(ext);
+                AABB = new BoundingBox(local - size, local + size);
+            }
             else if (EntityDef != null)
             {
                 if (editPivot)
@@ -1160,6 +1208,12 @@ namespace CodeWalker
             {
                 if (EntityDef != null) newrot = Quaternion.Normalize(Quaternion.Invert(EntityDef.Orientation) * newrot);
                 CollisionBounds.Orientation = newrot;
+            }
+            else if ((ArchetypeExtension != null) || (EntityExtension != null))
+            {
+                var ext = ArchetypeExtension ?? EntityExtension;
+                var local = ExtensionTransforms.WorldToLocal(EntityDef, newrot);
+                ExtensionTransforms.TrySetOffsetRotation(ext, local);
             }
             else if (EntityDef != null)
             {
@@ -1480,6 +1534,8 @@ namespace CodeWalker
         public object? GetProjectObject()
         {
             if (MultipleSelectionItems != null) return MultipleSelectionItems;
+            else if (ArchetypeExtension != null) return ArchetypeExtension;
+            else if (EntityExtension != null) return EntityExtension;
             else if (CollisionVertex != null) return CollisionVertex;
             else if (CollisionPoly != null) return CollisionPoly;
             else if (CollisionBounds != null) return CollisionBounds;
@@ -1514,6 +1570,32 @@ namespace CodeWalker
                     multi[i] = FromProjectObject(worldForm, arr[i]);
                 }
                 ms.SetMultipleSelectionItems(multi);
+            }
+            else if (o is MetaWrapper ext && parent is YmapEntityDef extEnt)
+            {
+                ms.EntityDef = extEnt;
+                ms.Archetype = extEnt.Archetype;
+                if ((extEnt.Archetype?.Extensions != null) && Array.IndexOf(extEnt.Archetype.Extensions, ext) >= 0)
+                {
+                    ms.ArchetypeExtension = ext;
+                }
+                else if ((extEnt.Extensions != null) && Array.IndexOf(extEnt.Extensions, ext) >= 0)
+                {
+                    ms.EntityExtension = ext;
+                }
+                else if (extEnt.Archetype != null)
+                {
+                    // Allow selecting a newly created archetype extension before it is drawn.
+                    ms.ArchetypeExtension = ext;
+                }
+                else
+                {
+                    ms.EntityExtension = ext;
+                }
+
+                ExtensionTransforms.TryGetOffsetPosition(ext, out var local);
+                float size = ExtensionTransforms.GetExtensionBoxSize(ext);
+                ms.AABB = new BoundingBox(local - size, local + size);
             }
             else if (o is YmapEntityDef entity)
             {

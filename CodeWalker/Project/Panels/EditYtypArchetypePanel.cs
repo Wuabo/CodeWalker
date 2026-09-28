@@ -24,6 +24,10 @@ namespace CodeWalker.Project.Panels
         private void EditYtypArchetypePanel_Load(object sender, EventArgs e)
         {
             AssetTypeComboBox.Items.AddRange(Enum.GetNames(typeof(rage__fwArchetypeDef__eAssetType)));
+            ExtensionTypeComboBox.Items.Clear();
+            ExtensionTypeComboBox.Items.AddRange(ExtensionTransforms.ArchetypeExtensionTypeNames);
+            if (ExtensionTypeComboBox.Items.Count > 0)
+                ExtensionTypeComboBox.SelectedIndex = 0;
         }
 
         public void SetArchetype(Archetype archetype)
@@ -86,6 +90,236 @@ namespace CodeWalker.Project.Panels
                 }
                 else TabControl.TabPages.Remove(TimeArchetypeTabPage);
 
+                UpdateExtensionsUI();
+            }
+            else
+            {
+                UpdateExtensionsUI();
+            }
+        }
+
+        private void UpdateExtensionsUI()
+        {
+            populatingui = true;
+            ExtensionsListBox.BeginUpdate();
+            ExtensionsListBox.Items.Clear();
+            ExtensionPropertyGrid.SelectedObject = null;
+            ExtensionDeleteButton.Enabled = false;
+
+            var exts = CurrentArchetype?.Extensions;
+            int count = (exts != null) ? exts.Length : 0;
+            ExtensionsCountLabel.Text = "Extensions: " + count;
+
+            if (exts != null)
+            {
+                for (int i = 0; i < exts.Length; i++)
+                {
+                    ExtensionsListBox.Items.Add(GetExtensionDisplayName(exts[i], i));
+                }
+            }
+
+            ExtensionsListBox.EndUpdate();
+            populatingui = false;
+        }
+
+        private static string GetExtensionDisplayName(MetaWrapper? ext, int index)
+        {
+            if (ext == null) return "[" + index + "] (null)";
+
+            string type = ext.GetType().Name;
+            if (type.StartsWith("MCExtensionDef", StringComparison.Ordinal))
+                type = type.Substring("MCExtensionDef".Length);
+            else if (type.StartsWith("Mrage__", StringComparison.Ordinal))
+                type = type.Substring("Mrage__".Length);
+            else if (type.StartsWith("MC", StringComparison.Ordinal))
+                type = type.Substring(2);
+
+            string name = ext.Name;
+            if (string.IsNullOrEmpty(name) || string.Equals(name, type, StringComparison.Ordinal))
+                return "[" + index + "] " + type;
+
+            return "[" + index + "] " + type + ": " + name;
+        }
+
+        private void MarkCurrentYtypChanged()
+        {
+            if (CurrentArchetype?.Ytyp == null || ProjectForm == null) return;
+
+            var ytyp = CurrentArchetype.Ytyp;
+            if (!ProjectForm.YtypExistsInProject(ytyp))
+            {
+                ProjectForm.AddYtypToProject(ytyp);
+            }
+            else
+            {
+                ProjectForm.SetYtypHasChanged(true);
+            }
+        }
+
+        private void ExtensionsListBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (populatingui) return;
+
+            int index = ExtensionsListBox.SelectedIndex;
+            var exts = CurrentArchetype?.Extensions;
+            if ((exts == null) || (index < 0) || (index >= exts.Length))
+            {
+                ExtensionPropertyGrid.SelectedObject = null;
+                ExtensionDeleteButton.Enabled = false;
+                return;
+            }
+
+            ExtensionPropertyGrid.SelectedObject = exts[index];
+            ExtensionDeleteButton.Enabled = true;
+            SelectExtensionInWorld(exts[index]);
+        }
+
+        public void SyncExtensionSelection(MetaWrapper? extension, bool selectInWorld, Archetype? worldArchetype = null)
+        {
+            if (extension == null || CurrentArchetype == null) return;
+
+            var exts = CurrentArchetype.Extensions;
+            int index = (exts != null) ? Array.IndexOf(exts, extension) : -1;
+
+            // Viewport may hold a different archetype instance than the panel; match by index.
+            if ((index < 0) && (worldArchetype?.Extensions != null))
+            {
+                int worldIndex = Array.IndexOf(worldArchetype.Extensions, extension);
+                if ((worldIndex >= 0) &&
+                    (exts != null) &&
+                    (worldIndex < exts.Length) &&
+                    (CurrentArchetype._BaseArchetypeDef.name == worldArchetype._BaseArchetypeDef.name))
+                {
+                    index = worldIndex;
+                    extension = exts[index];
+                }
+            }
+
+            if ((index < 0) || (exts == null) || (index >= exts.Length)) return;
+
+            if (TabControl.TabPages.Contains(ExtensionsTabPage) && (TabControl.SelectedTab != ExtensionsTabPage))
+            {
+                TabControl.SelectedTab = ExtensionsTabPage;
+            }
+
+            if (ExtensionsListBox.Items.Count != exts.Length)
+            {
+                UpdateExtensionsUI();
+            }
+
+            if (ExtensionsListBox.SelectedIndex != index)
+            {
+                populatingui = true;
+                ExtensionsListBox.SelectedIndex = index;
+                populatingui = false;
+            }
+
+            ExtensionPropertyGrid.SelectedObject = extension;
+            ExtensionDeleteButton.Enabled = true;
+            ExtensionPropertyGrid.Refresh();
+
+            if (selectInWorld)
+                SelectExtensionInWorld(extension);
+        }
+
+        private void SelectExtensionInWorld(MetaWrapper? extension)
+        {
+            if ((CurrentArchetype == null) || (extension == null) || (ProjectForm?.WorldForm == null)) return;
+            ProjectForm.WorldForm.SelectArchetypeExtension(CurrentArchetype, extension);
+        }
+
+        private void ExtensionAddButton_Click(object sender, EventArgs e)
+        {
+            if (CurrentArchetype == null) return;
+            if (ExtensionTypeComboBox.SelectedItem == null) return;
+
+            string typeName = ExtensionTypeComboBox.SelectedItem.ToString() ?? string.Empty;
+            var nameHash = CurrentArchetype._BaseArchetypeDef.name;
+            var ext = ExtensionTransforms.CreateArchetypeExtension(typeName, nameHash);
+            if (ext == null) return;
+
+            lock (ProjectForm.ProjectSyncRoot)
+            {
+                var list = new System.Collections.Generic.List<MetaWrapper>();
+                if (CurrentArchetype.Extensions != null)
+                    list.AddRange(CurrentArchetype.Extensions);
+                list.Add(ext);
+                CurrentArchetype.Extensions = list.ToArray();
+            }
+
+            MarkCurrentYtypChanged();
+            UpdateExtensionsUI();
+
+            if (ExtensionsListBox.Items.Count > 0)
+            {
+                ExtensionsListBox.SelectedIndex = ExtensionsListBox.Items.Count - 1;
+            }
+        }
+
+        private void ExtensionDeleteButton_Click(object sender, EventArgs e)
+        {
+            if (CurrentArchetype == null) return;
+
+            int index = ExtensionsListBox.SelectedIndex;
+            var exts = CurrentArchetype.Extensions;
+            if ((exts == null) || (index < 0) || (index >= exts.Length)) return;
+
+            var ext = exts[index];
+            string label = GetExtensionDisplayName(ext, index);
+            if (MessageBox.Show(
+                    "Delete this archetype extension?\n" + label + "\n\nThis operation cannot be undone. Continue?",
+                    "Confirm delete",
+                    MessageBoxButtons.YesNo) != DialogResult.Yes)
+            {
+                return;
+            }
+
+            lock (ProjectForm.ProjectSyncRoot)
+            {
+                var list = new System.Collections.Generic.List<MetaWrapper>(exts.Length);
+                for (int i = 0; i < exts.Length; i++)
+                {
+                    if (i != index)
+                        list.Add(exts[i]);
+                }
+                CurrentArchetype.Extensions = list.ToArray();
+            }
+
+            MarkCurrentYtypChanged();
+            UpdateExtensionsUI();
+        }
+
+        private void ExtensionPropertyGrid_PropertyValueChanged(object s, PropertyValueChangedEventArgs e)
+        {
+            if (populatingui || CurrentArchetype == null) return;
+            MarkCurrentYtypChanged();
+
+            int index = ExtensionsListBox.SelectedIndex;
+            if ((index >= 0) && (index < ExtensionsListBox.Items.Count) && (CurrentArchetype.Extensions != null) && (index < CurrentArchetype.Extensions.Length))
+            {
+                populatingui = true;
+                ExtensionsListBox.Items[index] = GetExtensionDisplayName(CurrentArchetype.Extensions[index], index);
+                populatingui = false;
+
+                var ext = CurrentArchetype.Extensions[index];
+                var wf = ProjectForm?.WorldForm;
+                if (wf != null)
+                {
+                    var sel = wf.CurrentMapSelection;
+                    if ((sel.ArchetypeExtension == ext) || (sel.EntityExtension == ext))
+                    {
+                        if (ExtensionTransforms.TryGetOffsetPosition(ext, out var local))
+                        {
+                            var world = ExtensionTransforms.LocalToWorld(sel.EntityDef, local);
+                            wf.SetWidgetPosition(world);
+                        }
+                        if (ExtensionTransforms.TryGetOffsetRotation(ext, out var localRot))
+                        {
+                            var worldRot = ExtensionTransforms.LocalToWorld(sel.EntityDef, localRot);
+                            wf.SetWidgetRotation(worldRot);
+                        }
+                    }
+                }
             }
         }
 

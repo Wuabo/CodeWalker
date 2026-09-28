@@ -68,9 +68,13 @@ namespace CodeWalker.GameFiles
                 for (int i = 0; i < AllArchetypes.Length; i++)
                 {
                     var arch = AllArchetypes[i]; //save the extensions first..
-                    if (arch._BaseArchetypeDef.extensions.Count1 > 0)
+                    if ((arch.Extensions != null) && (arch.Extensions.Length > 0))
                     {
                         arch._BaseArchetypeDef.extensions = mb.AddWrapperArrayPtr(arch.Extensions);
+                    }
+                    else
+                    {
+                        arch._BaseArchetypeDef.extensions = new Array_StructurePointer();
                     }
                 }
 

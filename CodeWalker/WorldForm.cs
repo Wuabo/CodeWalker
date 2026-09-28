@@ -4619,94 +4619,55 @@ namespace CodeWalker
         private MapBox GetExtensionBox(Vector3 camrel, MetaWrapper ext)
         {
             MapBox b = new();
-            Vector3 pos = Vector3.Zero;
-            float size = 0.5f;
-            if (ext is MCExtensionDefLightEffect)
-            {
-                var le = (MCExtensionDefLightEffect)ext;
-                pos = le.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefSpawnPointOverride)
-            {
-                var spo = (MCExtensionDefSpawnPointOverride)ext;
-                pos = spo.Data.offsetPosition;
-                size = spo.Data.Radius;
-            }
-            else if (ext is MCExtensionDefDoor)
-            {
-                var door = (MCExtensionDefDoor)ext;
-                pos = door.Data.offsetPosition;
-            }
-            else if (ext is Mrage__phVerletClothCustomBounds)
-            {
-                var cb = (Mrage__phVerletClothCustomBounds)ext;
-                if ((cb.CollisionData != null) && (cb.CollisionData.Length > 0))
-                {
-                    pos = cb.CollisionData[0].Data.Position;
-                }
-            }
-            else if (ext is MCExtensionDefParticleEffect)
-            {
-                var pe = (MCExtensionDefParticleEffect)ext;
-                pos = pe.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefAudioCollisionSettings)
-            {
-                var acs = (MCExtensionDefAudioCollisionSettings)ext;
-                pos = acs.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefAudioEmitter)
-            {
-                var ae = (MCExtensionDefAudioEmitter)ext;
-                pos = ae.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefSpawnPoint)
-            {
-                var sp = (MCExtensionDefSpawnPoint)ext;
-                pos = sp.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefExplosionEffect)
-            {
-                var ee = (MCExtensionDefExplosionEffect)ext;
-                pos = ee.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefLadder)
-            {
-                var ld = (MCExtensionDefLadder)ext;
-                pos = ld.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefBuoyancy)
-            {
-                var bu = (MCExtensionDefBuoyancy)ext;
-                pos = bu.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefExpression)
-            {
-                var exp = (MCExtensionDefExpression)ext;
-                pos = exp.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefLightShaft)
-            {
-                var ls = (MCExtensionDefLightShaft)ext;
-                pos = ls.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefWindDisturbance)
-            {
-                var wd = (MCExtensionDefWindDisturbance)ext;
-                pos = wd.Data.offsetPosition;
-            }
-            else if (ext is MCExtensionDefProcObject)
-            {
-                var po = (MCExtensionDefProcObject)ext;
-                pos = po.Data.offsetPosition;
-            }
-
+            ExtensionTransforms.TryGetOffsetPosition(ext, out var pos);
+            float size = ExtensionTransforms.GetExtensionBoxSize(ext);
 
             b.BBMin = pos - size;
             b.BBMax = pos + size;
             b.CamRelPos = camrel;
 
             return b;
+        }
+
+        public YmapEntityDef? FindEntityForArchetype(Archetype? archetype)
+        {
+            if (archetype == null) return null;
+
+            if ((SelectedItem.EntityDef != null) && (SelectedItem.EntityDef.Archetype == archetype))
+                return SelectedItem.EntityDef;
+
+            try
+            {
+                var list = Renderer.RenderedDrawables;
+                if (list != null)
+                {
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        var rd = list[i];
+                        if (rd.Entity == null) continue;
+                        if ((rd.Archetype == archetype) || (rd.Entity.Archetype == archetype))
+                            return rd.Entity;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        public void SelectArchetypeExtension(Archetype? archetype, MetaWrapper? extension)
+        {
+            if ((archetype == null) || (extension == null)) return;
+
+            var entity = FindEntityForArchetype(archetype);
+            if (entity == null) return;
+
+            if (SelectionMode != MapSelectionMode.ArchetypeExtension)
+            {
+                SetSelectionMode("Archetype Extension");
+            }
+
+            SelectObject(extension, entity);
         }
 
 

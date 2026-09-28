@@ -72,6 +72,13 @@
             this.TimeFlagsTextBox = new System.Windows.Forms.TextBox();
             this.TimeFlagsCheckedListBox = new System.Windows.Forms.CheckedListBox();
             this.label15 = new System.Windows.Forms.Label();
+            this.ExtensionsTabPage = new System.Windows.Forms.TabPage();
+            this.ExtensionsListBox = new System.Windows.Forms.ListBox();
+            this.ExtensionPropertyGrid = new System.Windows.Forms.PropertyGrid();
+            this.ExtensionDeleteButton = new System.Windows.Forms.Button();
+            this.ExtensionsCountLabel = new System.Windows.Forms.Label();
+            this.ExtensionTypeComboBox = new System.Windows.Forms.ComboBox();
+            this.ExtensionAddButton = new System.Windows.Forms.Button();
             this.BaseArchetypeTabPage.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.SpecialAttributeNumericUpDown)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.HDTextureDistNumericUpDown)).BeginInit();
@@ -79,6 +86,7 @@
             this.TabControl.SuspendLayout();
             this.MloArchetypeTabPage.SuspendLayout();
             this.TimeArchetypeTabPage.SuspendLayout();
+            this.ExtensionsTabPage.SuspendLayout();
             this.SuspendLayout();
             // 
             // BaseArchetypeTabPage
@@ -522,6 +530,7 @@
             // TabControl
             // 
             this.TabControl.Controls.Add(this.BaseArchetypeTabPage);
+            this.TabControl.Controls.Add(this.ExtensionsTabPage);
             this.TabControl.Controls.Add(this.MloArchetypeTabPage);
             this.TabControl.Controls.Add(this.TimeArchetypeTabPage);
             this.TabControl.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -530,6 +539,88 @@
             this.TabControl.SelectedIndex = 0;
             this.TabControl.Size = new System.Drawing.Size(639, 505);
             this.TabControl.TabIndex = 0;
+            // 
+            // ExtensionsTabPage
+            // 
+            this.ExtensionsTabPage.Controls.Add(this.ExtensionPropertyGrid);
+            this.ExtensionsTabPage.Controls.Add(this.ExtensionDeleteButton);
+            this.ExtensionsTabPage.Controls.Add(this.ExtensionsListBox);
+            this.ExtensionsTabPage.Controls.Add(this.ExtensionAddButton);
+            this.ExtensionsTabPage.Controls.Add(this.ExtensionTypeComboBox);
+            this.ExtensionsTabPage.Controls.Add(this.ExtensionsCountLabel);
+            this.ExtensionsTabPage.Location = new System.Drawing.Point(4, 22);
+            this.ExtensionsTabPage.Name = "ExtensionsTabPage";
+            this.ExtensionsTabPage.Padding = new System.Windows.Forms.Padding(3);
+            this.ExtensionsTabPage.Size = new System.Drawing.Size(631, 479);
+            this.ExtensionsTabPage.TabIndex = 3;
+            this.ExtensionsTabPage.Text = "Extensions";
+            this.ExtensionsTabPage.UseVisualStyleBackColor = true;
+            // 
+            // ExtensionsCountLabel
+            // 
+            this.ExtensionsCountLabel.AutoSize = true;
+            this.ExtensionsCountLabel.Location = new System.Drawing.Point(6, 9);
+            this.ExtensionsCountLabel.Name = "ExtensionsCountLabel";
+            this.ExtensionsCountLabel.Size = new System.Drawing.Size(72, 13);
+            this.ExtensionsCountLabel.TabIndex = 0;
+            this.ExtensionsCountLabel.Text = "Extensions: 0";
+            // 
+            // ExtensionTypeComboBox
+            // 
+            this.ExtensionTypeComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.ExtensionTypeComboBox.FormattingEnabled = true;
+            this.ExtensionTypeComboBox.Location = new System.Drawing.Point(9, 28);
+            this.ExtensionTypeComboBox.Name = "ExtensionTypeComboBox";
+            this.ExtensionTypeComboBox.Size = new System.Drawing.Size(145, 21);
+            this.ExtensionTypeComboBox.TabIndex = 1;
+            // 
+            // ExtensionAddButton
+            // 
+            this.ExtensionAddButton.Location = new System.Drawing.Point(160, 27);
+            this.ExtensionAddButton.Name = "ExtensionAddButton";
+            this.ExtensionAddButton.Size = new System.Drawing.Size(69, 23);
+            this.ExtensionAddButton.TabIndex = 2;
+            this.ExtensionAddButton.Text = "Add";
+            this.ExtensionAddButton.UseVisualStyleBackColor = true;
+            this.ExtensionAddButton.Click += new System.EventHandler(this.ExtensionAddButton_Click);
+            // 
+            // ExtensionsListBox
+            // 
+            this.ExtensionsListBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)));
+            this.ExtensionsListBox.FormattingEnabled = true;
+            this.ExtensionsListBox.IntegralHeight = false;
+            this.ExtensionsListBox.Location = new System.Drawing.Point(9, 55);
+            this.ExtensionsListBox.Name = "ExtensionsListBox";
+            this.ExtensionsListBox.Size = new System.Drawing.Size(220, 381);
+            this.ExtensionsListBox.TabIndex = 3;
+            this.ExtensionsListBox.SelectedIndexChanged += new System.EventHandler(this.ExtensionsListBox_SelectedIndexChanged);
+            // 
+            // ExtensionDeleteButton
+            // 
+            this.ExtensionDeleteButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.ExtensionDeleteButton.Enabled = false;
+            this.ExtensionDeleteButton.Location = new System.Drawing.Point(9, 442);
+            this.ExtensionDeleteButton.Name = "ExtensionDeleteButton";
+            this.ExtensionDeleteButton.Size = new System.Drawing.Size(220, 23);
+            this.ExtensionDeleteButton.TabIndex = 4;
+            this.ExtensionDeleteButton.Text = "Delete Extension";
+            this.ExtensionDeleteButton.UseVisualStyleBackColor = true;
+            this.ExtensionDeleteButton.Click += new System.EventHandler(this.ExtensionDeleteButton_Click);
+            // 
+            // ExtensionPropertyGrid
+            // 
+            this.ExtensionPropertyGrid.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.ExtensionPropertyGrid.HelpVisible = false;
+            this.ExtensionPropertyGrid.Location = new System.Drawing.Point(235, 28);
+            this.ExtensionPropertyGrid.Name = "ExtensionPropertyGrid";
+            this.ExtensionPropertyGrid.PropertySort = System.Windows.Forms.PropertySort.Categorized;
+            this.ExtensionPropertyGrid.Size = new System.Drawing.Size(388, 437);
+            this.ExtensionPropertyGrid.TabIndex = 5;
+            this.ExtensionPropertyGrid.ToolbarVisible = false;
+            this.ExtensionPropertyGrid.PropertyValueChanged += new System.Windows.Forms.PropertyValueChangedEventHandler(this.ExtensionPropertyGrid_PropertyValueChanged);
             // 
             // MloArchetypeTabPage
             // 
@@ -646,6 +737,8 @@
             this.MloArchetypeTabPage.ResumeLayout(false);
             this.TimeArchetypeTabPage.ResumeLayout(false);
             this.TimeArchetypeTabPage.PerformLayout();
+            this.ExtensionsTabPage.ResumeLayout(false);
+            this.ExtensionsTabPage.PerformLayout();
             this.ResumeLayout(false);
 
         }
@@ -689,6 +782,13 @@
         private System.Windows.Forms.Label label2;
         private System.Windows.Forms.Label label1;
         private System.Windows.Forms.TabControl TabControl;
+        private System.Windows.Forms.TabPage ExtensionsTabPage;
+        private System.Windows.Forms.ListBox ExtensionsListBox;
+        private System.Windows.Forms.PropertyGrid ExtensionPropertyGrid;
+        private System.Windows.Forms.Button ExtensionDeleteButton;
+        private System.Windows.Forms.Label ExtensionsCountLabel;
+        private System.Windows.Forms.ComboBox ExtensionTypeComboBox;
+        private System.Windows.Forms.Button ExtensionAddButton;
         private System.Windows.Forms.TabPage MloArchetypeTabPage;
         private System.Windows.Forms.TabPage TimeArchetypeTabPage;
         private System.Windows.Forms.TextBox TimeFlagsTextBox;

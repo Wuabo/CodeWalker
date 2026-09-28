@@ -7982,6 +7982,38 @@ namespace CodeWalker.Project
                 RelFile? audiofile = audiopl?.RelFile;
                 bool showcurrent = false;
 
+                if (sel.ArchetypeExtension != null)
+                {
+                    arch = sel.Archetype ?? arch;
+                    ytyp = arch?.Ytyp ?? ytyp;
+                    CurrentArchetype = arch;
+                    CurrentYtypFile = ytyp;
+
+                    if (arch != null)
+                    {
+                        var panel = FindPanel<EditYtypArchetypePanel>(p =>
+                            (p.CurrentArchetype == arch) ||
+                            ((p.CurrentArchetype != null) &&
+                             (p.CurrentArchetype._BaseArchetypeDef.name == arch._BaseArchetypeDef.name) &&
+                             (p.CurrentArchetype.Ytyp == arch.Ytyp)));
+
+                        if (panel != null)
+                        {
+                            if (panel.IsHidden) panel.Show();
+                            panel.BringToFront();
+                            if (panel.CurrentArchetype != arch)
+                                panel.SetArchetype(arch);
+                            panel.SyncExtensionSelection(sel.ArchetypeExtension, false, arch);
+                        }
+                        else
+                        {
+                            ShowEditArchetypePanel(true);
+                            FindPanel<EditYtypArchetypePanel>(p => p.CurrentArchetype == arch)
+                                ?.SyncExtensionSelection(sel.ArchetypeExtension, false, arch);
+                        }
+                    }
+                }
+
                 if (YmapExistsInProject(ymap) && (ybn == null))
                 {
                     if (wasmult || (ent != CurrentEntity))
@@ -8184,6 +8216,16 @@ namespace CodeWalker.Project
                     {
                         OnWorldCollisionBoundsModified(sel.CollisionBounds);
                     }
+                    else if (sel.ArchetypeExtension != null)
+                    {
+                        OnWorldArchetypeExtensionModified(sel);
+                    }
+                    else if (sel.EntityExtension != null)
+                    {
+                        // Entity extensions live on the ymap entity.
+                        if (sel.EntityDef != null)
+                            OnWorldEntityModified(sel.EntityDef);
+                    }
                     else if (sel.EntityDef != null)
                     {
                         OnWorldEntityModified(sel.EntityDef);
@@ -8244,6 +8286,36 @@ namespace CodeWalker.Project
                 ShowEditMultiPanel(false);
             }
 
+        }
+        private void OnWorldArchetypeExtensionModified(MapSelection sel)
+        {
+            var arch = sel.Archetype ?? sel.EntityDef?.Archetype;
+            var ext = sel.ArchetypeExtension;
+            if ((arch?.Ytyp == null) || (ext == null)) return;
+
+            if (CurrentProjectFile == null)
+            {
+                NewProject();
+            }
+
+            CurrentArchetype = arch;
+            CurrentYtypFile = arch.Ytyp;
+
+            if (!YtypExistsInProject(arch.Ytyp))
+            {
+                AddYtypToProject(arch.Ytyp);
+            }
+            else
+            {
+                SetYtypHasChanged(true);
+            }
+
+            var panel = FindPanel<EditYtypArchetypePanel>(p =>
+                (p.CurrentArchetype == arch) ||
+                ((p.CurrentArchetype != null) &&
+                 (p.CurrentArchetype._BaseArchetypeDef.name == arch._BaseArchetypeDef.name) &&
+                 (p.CurrentArchetype.Ytyp == arch.Ytyp)));
+            panel?.SyncExtensionSelection(ext, false, arch);
         }
         private void OnWorldEntityModified(YmapEntityDef ent)
         {

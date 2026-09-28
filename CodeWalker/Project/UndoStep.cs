@@ -1828,4 +1828,98 @@ namespace CodeWalker.Project
     }
 
 
+    public class ExtensionPositionUndoStep : UndoStep
+    {
+        public MetaWrapper Extension { get; set; }
+        public YmapEntityDef? Entity { get; set; }
+        public Vector3 StartPosition { get; set; }
+        public Vector3 EndPosition { get; set; }
+        public bool IsArchetypeExtension { get; set; }
+
+        public ExtensionPositionUndoStep(MetaWrapper extension, YmapEntityDef? entity, Vector3 startWorld, bool isArchetype, WorldForm wf)
+        {
+            Extension = extension;
+            Entity = entity;
+            IsArchetypeExtension = isArchetype;
+            StartPosition = startWorld;
+            ExtensionTransforms.TryGetOffsetPosition(extension, out var local);
+            EndPosition = ExtensionTransforms.LocalToWorld(entity, local);
+        }
+
+        private void Update(WorldForm wf, ref MapSelection sel, Vector3 worldPos)
+        {
+            var local = ExtensionTransforms.WorldToLocal(Entity, worldPos);
+            ExtensionTransforms.TrySetOffsetPosition(Extension, local);
+
+            if ((sel.ArchetypeExtension != Extension) && (sel.EntityExtension != Extension))
+            {
+                wf.SelectObject(Extension, Entity);
+            }
+            wf.SetWidgetPosition(worldPos);
+        }
+
+        public override void Undo(WorldForm wf, ref MapSelection sel)
+        {
+            Update(wf, ref sel, StartPosition);
+        }
+
+        public override void Redo(WorldForm wf, ref MapSelection sel)
+        {
+            Update(wf, ref sel, EndPosition);
+        }
+
+        public override string ToString()
+        {
+            return (IsArchetypeExtension ? "Archetype" : "Entity") + " Extension: Position";
+        }
+    }
+
+    public class ExtensionRotationUndoStep : UndoStep
+    {
+        public MetaWrapper Extension { get; set; }
+        public YmapEntityDef? Entity { get; set; }
+        public Quaternion StartRotation { get; set; }
+        public Quaternion EndRotation { get; set; }
+        public bool IsArchetypeExtension { get; set; }
+
+        public ExtensionRotationUndoStep(MetaWrapper extension, YmapEntityDef? entity, Quaternion startWorld, bool isArchetype, WorldForm wf)
+        {
+            Extension = extension;
+            Entity = entity;
+            IsArchetypeExtension = isArchetype;
+            StartRotation = startWorld;
+            if (ExtensionTransforms.TryGetOffsetRotation(extension, out var local))
+                EndRotation = ExtensionTransforms.LocalToWorld(entity, local);
+            else
+                EndRotation = startWorld;
+        }
+
+        private void Update(WorldForm wf, ref MapSelection sel, Quaternion worldRot)
+        {
+            var local = ExtensionTransforms.WorldToLocal(Entity, worldRot);
+            ExtensionTransforms.TrySetOffsetRotation(Extension, local);
+
+            if ((sel.ArchetypeExtension != Extension) && (sel.EntityExtension != Extension))
+            {
+                wf.SelectObject(Extension, Entity);
+            }
+            wf.SetWidgetRotation(worldRot);
+        }
+
+        public override void Undo(WorldForm wf, ref MapSelection sel)
+        {
+            Update(wf, ref sel, StartRotation);
+        }
+
+        public override void Redo(WorldForm wf, ref MapSelection sel)
+        {
+            Update(wf, ref sel, EndRotation);
+        }
+
+        public override string ToString()
+        {
+            return (IsArchetypeExtension ? "Archetype" : "Entity") + " Extension: Rotation";
+        }
+    }
+
 }
