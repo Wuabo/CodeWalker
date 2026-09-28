@@ -1,4 +1,4 @@
-using CodeWalker.Forms;
+﻿using CodeWalker.Forms;
 using CodeWalker.GameFiles;
 using CodeWalker.Properties;
 using CodeWalker.Tools;
@@ -50,6 +50,7 @@ namespace CodeWalker
         private List<RpfFile> AllRpfs { get; set; } = [];
         private GameFileCache FileCache { get; set; } = GameFileCacheFactory.Create();
         private object FileCacheSyncRoot = new object();
+        private readonly Dictionary<string, List<YtypFile>> ExtraFolderYtyps = new(StringComparer.OrdinalIgnoreCase);
 
         public bool EditMode { get; private set; } = false;
 
@@ -301,6 +302,16 @@ namespace CodeWalker
                             Scenarios.EnsureScenarioTypes(FileCache);
 
                             UpdateStatus("File cache loaded.");
+                        }
+                    }
+
+                    // Index ytyps from extra folders only after the cache is ready
+                    // (RefreshMainTreeView runs before InitFileCache and must not wait on it).
+                    foreach (var extraroot in ExtraRootFolders.ToArray())
+                    {
+                        if (Directory.Exists(extraroot.FullPath))
+                        {
+                            RegisterExtraFolderYtyps(extraroot);
                         }
                     }
                 }
@@ -906,9 +917,15 @@ namespace CodeWalker
                 if (Directory.Exists(extraroot.FullPath))
                 {
                     RefreshMainTreeViewRoot(extraroot, true);
+                    // Ytyp registration happens after FileCache init — do not wait here.
+                    if (FileCache.IsInited)
+                    {
+                        RegisterExtraFolderYtyps(extraroot);
+                    }
                 }
                 else
                 {
+                    UnregisterExtraFolderYtyps(extraroot);
                     remFolders.Add(extraroot);
                 }
             }
@@ -4084,6 +4101,9 @@ namespace CodeWalker
                     {
                         MainTreeView.SelectedNode = root.TreeNode;
                     }));
+
+                    // Register after the tree is shown so a slow ytyp scan never blocks open.
+                    RegisterExtraFolderYtyps(root, waitForCache: true);
                 }
                 catch (Exception ex)
                 {
@@ -4096,8 +4116,114 @@ namespace CodeWalker
             if (folder == null) return;
             if (folder.IsExtraFolder == false) return;
 
+            UnregisterExtraFolderYtyps(folder);
             folder.TreeNode?.Remove();
             ExtraRootFolders.Remove(folder);
+        }
+
+        private void WaitForFileCache()
+        {
+            while (!IsDisposed && !FileCache.IsInited)
+            {
+                Thread.Sleep(50);
+            }
+        }
+
+        private void RegisterExtraFolderYtyps(MainTreeFolder folder, bool waitForCache = false)
+        {
+            if (string.IsNullOrEmpty(folder.FullPath)) return;
+            if (!Directory.Exists(folder.FullPath)) return;
+
+            if (waitForCache)
+            {
+                WaitForFileCache();
+            }
+            if (IsDisposed || !FileCache.IsInited) return;
+
+            UnregisterExtraFolderYtyps(folder);
+
+            string[] ytypPaths;
+            try
+            {
+                ytypPaths = Directory.GetFiles(folder.FullPath, "*.ytyp", SearchOption.AllDirectories);
+            }
+            catch (Exception ex)
+            {
+                UpdateErrorLog(folder.FullPath + ": " + ex.Message);
+                return;
+            }
+
+            var loaded = new List<YtypFile>();
+            var archetypeCount = 0;
+
+            foreach (var path in ytypPaths)
+            {
+                try
+                {
+                    UpdateStatus("Loading archetypes from " + path + "...");
+
+                    var data = File.ReadAllBytes(path);
+                    var ytyp = new YtypFile();
+                    ytyp.Load(data);
+
+                    var shortNameLower = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+                    JenkIndex.Ensure(shortNameLower);
+                    ytyp.Name = Path.GetFileName(path);
+                    ytyp.NameHash = JenkHash.GenHash(shortNameLower);
+
+                    if (ytyp.RpfFileEntry != null)
+                    {
+                        ytyp.RpfFileEntry.Name = ytyp.Name;
+                        ytyp.RpfFileEntry.NameLower = ytyp.Name.ToLowerInvariant();
+                        ytyp.RpfFileEntry.NameHash = JenkHash.GenHash(ytyp.RpfFileEntry.NameLower);
+                        ytyp.RpfFileEntry.ShortNameHash = ytyp.NameHash;
+                        ytyp.RpfFileEntry.Path = path;
+                    }
+
+                    if (ytyp.AllArchetypes != null)
+                    {
+                        foreach (var arch in ytyp.AllArchetypes)
+                        {
+                            if (arch == null || arch.Hash == 0) continue;
+                            JenkIndex.Ensure(arch._BaseArchetypeDef.name.ToCleanString());
+                            JenkIndex.Ensure(arch._BaseArchetypeDef.assetName.ToCleanString());
+                            FileCache.AddProjectArchetype(arch);
+                            archetypeCount++;
+                        }
+                    }
+
+                    loaded.Add(ytyp);
+                }
+                catch (Exception ex)
+                {
+                    UpdateErrorLog(path + ": " + ex.Message);
+                }
+            }
+
+            ExtraFolderYtyps[folder.FullPath] = loaded;
+
+            if (loaded.Count > 0)
+            {
+                UpdateStatus($"Loaded {loaded.Count} ytyp(s), {archetypeCount} archetype(s) from {folder.Name}.");
+            }
+        }
+
+        private void UnregisterExtraFolderYtyps(MainTreeFolder folder)
+        {
+            if (string.IsNullOrEmpty(folder.FullPath)) return;
+            if (!ExtraFolderYtyps.TryGetValue(folder.FullPath, out var list)) return;
+
+            foreach (var ytyp in list)
+            {
+                if (ytyp?.AllArchetypes == null) continue;
+                foreach (var arch in ytyp.AllArchetypes)
+                {
+                    if (arch == null) continue;
+                    FileCache.RemoveProjectArchetype(arch);
+                }
+            }
+
+            ExtraFolderYtyps.Remove(folder.FullPath);
         }
         private void Paste()
         {
