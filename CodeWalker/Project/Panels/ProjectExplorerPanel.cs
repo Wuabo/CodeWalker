@@ -334,6 +334,10 @@ namespace CodeWalker.Project.Panels
 
             node.Nodes.Clear();
 
+            // LOD light instances need the parent distlodlights ymap; link it from the project
+            // so the explorer list appears even before the world streams both maps.
+            EnsureProjectLodLightsLinked(ymap);
+
             if ((ymap.AllEntities != null) && (ymap.AllEntities.Length > 0))
             {
                 var entsnode = node.Nodes.Add("Entities (" + ymap.AllEntities.Length.ToString() + ")");
@@ -2937,6 +2941,84 @@ namespace CodeWalker.Project.Panels
             ymapnode.Tag = ymap;
             fileTreeNodes[ymap] = ymapnode;
             LoadYmapTreeNodes(ymap, ymapnode);
+
+            // If this is a distlodlights parent, rebuild any lodlights child nodes that were waiting for it.
+            if (ymap.DistantLODLights != null)
+            {
+                RefreshDependentLodLightTreeNodes(ymap);
+            }
+        }
+
+        private void EnsureProjectLodLightsLinked(YmapFile ymap)
+        {
+            if (ymap.LODLights == null) return;
+            if ((ymap.LODLights.LodLights != null) && (ymap.LODLights.LodLights.Length > 0)) return;
+
+            YmapFile? parent = ymap.Parent;
+            if (parent?.DistantLODLights == null)
+            {
+                var phash = ymap._CMapData.parent;
+                if (phash.Hash == 0) return;
+
+                var files = ProjectForm?.CurrentProjectFile?.YmapFiles;
+                if (files == null) return;
+
+                foreach (var p in files)
+                {
+                    if (p?.DistantLODLights == null) continue;
+                    if (p._CMapData.name == phash)
+                    {
+                        parent = p;
+                        break;
+                    }
+                    if (p.RpfFileEntry != null)
+                    {
+                        uint sh = p.RpfFileEntry.ShortNameHash;
+                        if (sh == 0)
+                        {
+                            sh = JenkHash.GenHash(p.RpfFileEntry.GetShortNameLower());
+                        }
+                        if (sh == phash.Hash)
+                        {
+                            parent = p;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (parent?.DistantLODLights != null)
+            {
+                ymap.ConnectToParent(parent);
+            }
+        }
+
+        private void RefreshDependentLodLightTreeNodes(YmapFile parentYmap)
+        {
+            var files = ProjectForm?.CurrentProjectFile?.YmapFiles;
+            if (files == null) return;
+
+            uint parentHash = parentYmap._CMapData.name.Hash;
+            if ((parentYmap.RpfFileEntry != null) && (parentYmap.RpfFileEntry.ShortNameHash != 0))
+            {
+                parentHash = parentYmap.RpfFileEntry.ShortNameHash;
+            }
+            else if (parentHash == 0 && parentYmap.RpfFileEntry != null)
+            {
+                parentHash = JenkHash.GenHash(parentYmap.RpfFileEntry.GetShortNameLower());
+            }
+
+            foreach (var child in files)
+            {
+                if (child?.LODLights == null) continue;
+                if (child._CMapData.parent.Hash != parentHash && child._CMapData.parent != parentYmap._CMapData.name)
+                    continue;
+                if (!fileTreeNodes.TryGetValue(child, out var childNode) || childNode == null) continue;
+
+                // Rebuild so the LOD Lights list appears now that the parent is available.
+                childNode.Name = string.Empty;
+                LoadYmapTreeNodes(child, childNode);
+            }
         }
         public void AddYtypFileTreeNode(YtypFile? ytyp)
         {

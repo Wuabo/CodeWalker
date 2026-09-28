@@ -50,7 +50,7 @@ public class EnsureLightsTests
         {
             Assert.Same(attributes[i], lights[i].Attributes);
             Assert.Equal(originalBytes[i], Serialize(attributes[i]));
-            // EnsureLights hashes drawable bounds; the generator independently uses archetype bounds.
+            // EnsureLights hashes archetype∪drawable∪physics bounds; the LOD generator must reuse this Hash.
             Assert.Equal(YmapEntityDef.ComputeLightHash([960, 1960, 2960, 1040, 2040, 3040, (uint)i]), lights[i].Hash);
         }
         Assert.Equal(boundsBefore, GeneratorBounds(entity));

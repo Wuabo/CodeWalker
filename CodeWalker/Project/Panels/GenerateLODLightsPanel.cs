@@ -275,16 +275,6 @@ namespace CodeWalker.Project.Panels
                     var elights = ent.Lights;
                     if (elights == null) continue;
 
-                    var archBB = new BoundingBox(ent.Archetype.BBMin, ent.Archetype.BBMax).Transform(ent.Position, ent.Orientation, ent.Scale);
-                    var hashInts = new uint[7];
-                    hashInts[0] = (uint)(int)(archBB.Minimum.X * 10.0f);
-                    hashInts[1] = (uint)(int)(archBB.Minimum.Y * 10.0f);
-                    hashInts[2] = (uint)(int)(archBB.Minimum.Z * 10.0f);
-                    hashInts[3] = (uint)(int)(archBB.Maximum.X * 10.0f);
-                    hashInts[4] = (uint)(int)(archBB.Maximum.Y * 10.0f);
-                    hashInts[5] = (uint)(int)(archBB.Maximum.Z * 10.0f);
-                    int exts = ent.Archetype.Extensions?.Length ?? 0;
-
                     bool isStreetLight = entName.Contains("streetlight") || entName.Contains("street_light") || entName.Contains("nylamp") || entName.Contains("nytraf");
 
                     for (int li = 0; li < elights.Length; li++)
@@ -372,8 +362,8 @@ namespace CodeWalker.Project.Panels
                         light.falloff = la.Falloff;
                         light.falloffExponent = la.FalloffExponent;
                         light.timeAndStateFlags = timeAndState;
-                        hashInts[6] = (uint)(exts + li);
-                        light.hash = YmapEntityDef.ComputeLightHash(hashInts);
+                        // Must match EnsureLights / LodLightsDict so HD↔LOD handoff does not flicker.
+                        light.hash = elight.Hash;
                         light.coneInnerAngle = inner;
                         light.coneOuterAngleOrCapExt = outer;
                         light.coronaIntensity = packedCorona;
@@ -743,18 +733,20 @@ namespace CodeWalker.Project.Panels
             distymap.CalcFlags();
             distymap.CalcExtents();
 
-            var lodname = $"{pname}_lodlights_{catLabel}{cellIndex:D3}";
-            var distname = $"{pname}_distlodlights_{catLabel}{cellIndex:D3}";
+            var lodname = $"{pname}_lodlights_{catLabel}{cellIndex:D3}".ToLowerInvariant();
+            var distname = $"{pname}_distlodlights_{catLabel}{cellIndex:D3}".ToLowerInvariant();
             lodymap.Name = lodname;
             lodymap._CMapData.name = JenkHash.GenHash(lodname);
             lodymap.RpfFileEntry = new RpfResourceFileEntry();
             lodymap.RpfFileEntry.Name = lodname + ".ymap";
             lodymap.RpfFileEntry.NameLower = lodname + ".ymap";
+            lodymap.RpfFileEntry.ShortNameHash = lodymap._CMapData.name.Hash;
             distymap.Name = distname;
             distymap._CMapData.name = JenkHash.GenHash(distname);
             distymap.RpfFileEntry = new RpfResourceFileEntry();
             distymap.RpfFileEntry.Name = distname + ".ymap";
             distymap.RpfFileEntry.NameLower = distname + ".ymap";
+            distymap.RpfFileEntry.ShortNameHash = distymap._CMapData.name.Hash;
 
             lodymap._CMapData.parent = distymap._CMapData.name;
             lodymap.Loaded = true;

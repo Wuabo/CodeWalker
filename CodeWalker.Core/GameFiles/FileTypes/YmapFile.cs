@@ -3265,8 +3265,10 @@ namespace CodeWalker.GameFiles
                 {
                     var p = positions[i];
                     Vector3 pv = p.ToVector3();
-                    min = Vector3.Min(min, pv);
-                    max = Vector3.Max(max, pv);
+                    float f = (falloff != null && i < falloff.Length) ? falloff[i] : 0.0f;
+                    var reach = new Vector3(f);
+                    min = Vector3.Min(min, pv - reach);
+                    max = Vector3.Max(max, pv + reach);
                 }
                 BBMin = min;
                 BBMax = max;
