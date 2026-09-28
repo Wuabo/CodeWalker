@@ -40,6 +40,7 @@ namespace CodeWalker.World
         public Expression?[] Expressions { get; set; } = new Expression?[12];
         public ClothInstance?[] Clothes { get; set; } = new ClothInstance?[12];
         public bool EnableRootMotion { get; set; } = false; //used to toggle whether or not to include root motion when playing animations
+        public bool LoopAnimation { get; set; } = false; //when true, clip playback wraps for preview (scenarios etc.)
         public crSkeletonData? Skeleton { get; set; }
 
         public Vector3 Position { get; set; } = Vector3.Zero;

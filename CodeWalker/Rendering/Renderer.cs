@@ -3395,7 +3395,7 @@ namespace CodeWalker.Rendering
             return res;
         }
 
-        public bool RenderDrawable(rmcDrawable? drawable, Archetype? arche, YmapEntityDef? entity, uint txdHash = 0, TextureDictionary? txdExtra = null, Texture? diffOverride = null, ClipMapEntry? animClip = null, ClothInstance? cloth = null, Expression? expr = null, ClipMapEntry? faceClip = null, ClipMapEntry? blendClip = null, float animationBlend = 0.0f, double blendAnimationTime = double.NaN)
+        public bool RenderDrawable(rmcDrawable? drawable, Archetype? arche, YmapEntityDef? entity, uint txdHash = 0, TextureDictionary? txdExtra = null, Texture? diffOverride = null, ClipMapEntry? animClip = null, ClothInstance? cloth = null, Expression? expr = null, ClipMapEntry? faceClip = null, ClipMapEntry? blendClip = null, float animationBlend = 0.0f, double blendAnimationTime = double.NaN, bool loopWorldAnimation = false)
         {
             //enqueue a single drawable for rendering.
 
@@ -3410,7 +3410,7 @@ namespace CodeWalker.Rendering
             {
                 rndbl.ClipMapEntry = animClip;
                 rndbl.ClipDict = animClip.Clip?.Ycd;
-                rndbl.LoopWorldAnimation = false;
+                rndbl.LoopWorldAnimation = loopWorldAnimation;
                 rndbl.HasAnims = true;
             }
             else if ((arche == null) && (rndbl.ClipMapEntry != null))
@@ -3753,20 +3753,33 @@ namespace CodeWalker.Rendering
 
             if (ped?.Yft != null)
             {
+                // Keep requesting default ped clip dict until loaded (idle fallback).
+                if (ped.InitData != null)
+                {
+                    var pedYcdHash = JenkHash.GenHashLowerInvariant(ped.InitData.ClipDictionaryName);
+                    var pedYcd = gameFileCache.GetYcd(pedYcdHash);
+                    if (pedYcd != null)
+                    {
+                        ped.Ycd = pedYcd;
+                    }
+                }
+
                 // Load animation based on scenario type
                 ClipMapEntry? animClip = null;
+                ClipMapEntry? idleClip = null;
 
                 // Try to get animation from ped's default clip dict first (idle animation)
-                if (ped.Ycd?.ClipMapEntries != null)
+                if ((ped.Ycd != null) && ped.Ycd.Loaded && (ped.Ycd.ClipMapEntries != null))
                 {
                     var idleHash = JenkHash.GenHash("idle");
-                    animClip = ped.Ycd.ClipMapEntries.FirstOrDefault(c =>
+                    idleClip = ped.Ycd.ClipMapEntries.FirstOrDefault(c =>
                         c.Clip != null && c.Hash == idleHash);
 
-                    if (animClip == null)
+                    if (idleClip == null)
                     {
-                        animClip = ped.Ycd.ClipMapEntries.FirstOrDefault(c => c.Clip != null);
+                        idleClip = ped.Ycd.ClipMapEntries.FirstOrDefault(c => c.Clip != null);
                     }
+                    animClip = idleClip;
                 }
 
                 // Try to load scenario-specific animation
@@ -3812,19 +3825,19 @@ namespace CodeWalker.Rendering
                         if (!string.IsNullOrEmpty(clipDictName))
                         {
                             var ycdHash = JenkHash.GenHashLowerInvariant(clipDictName);
+                            // Keep enqueueing every frame until the scenario clip dict is ready.
                             var ycd = gameFileCache.GetYcd(ycdHash);
 
                             if ((ycd != null) && (ycd.Loaded) && (ycd.ClipMapEntries != null))
                             {
-                                // Try to find a "base" clip or use the first available clip
+                                // Prefer "base" / "idle", then first available clip
                                 var baseHash = JenkHash.GenHash("base");
+                                var idleHash = JenkHash.GenHash("idle");
                                 var scenarioClip = ycd.ClipMapEntries.FirstOrDefault(c =>
                                     c.Clip != null && c.Hash == baseHash);
-
-                                if (scenarioClip == null)
-                                {
-                                    scenarioClip = ycd.ClipMapEntries.FirstOrDefault(c => c.Clip != null);
-                                }
+                                scenarioClip ??= ycd.ClipMapEntries.FirstOrDefault(c =>
+                                    c.Clip != null && c.Hash == idleHash);
+                                scenarioClip ??= ycd.ClipMapEntries.FirstOrDefault(c => c.Clip != null);
 
                                 if (scenarioClip != null)
                                 {
@@ -3887,8 +3900,9 @@ namespace CodeWalker.Rendering
                 ped.RenderEntity.SetPosition(pos);
                 ped.RenderEntity.SetOrientation(ori);
 
-                // Update animation clip
+                // Update animation clip and keep preview looping
                 ped.AnimClip = animClip;
+                ped.LoopAnimation = true;
 
                 // Render the ped with all its components and animation
                 RenderPed(ped);
@@ -3997,7 +4011,7 @@ namespace CodeWalker.Rendering
             if (drawFlag)
             {
                 RenderDrawable(drawable, null, ped.RenderEntity, 0, td, texture, ac, cloth, expr, ped.FaceAnimClip,
-                    ped.BlendAnimClip, ped.AnimBlend, ped.BlendAnimTime);
+                    ped.BlendAnimClip, ped.AnimBlend, ped.BlendAnimTime, ped.LoopAnimation);
             }
 
 
