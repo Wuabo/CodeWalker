@@ -2,7 +2,7 @@ using System;
 using System.Windows.Forms;
 using CodeWalker.GameFiles;
 
-namespace CodeWalker.DoorAudio
+namespace CodeWalker.DoorEditor
 {
     static class Program
     {
@@ -10,7 +10,8 @@ namespace CodeWalker.DoorAudio
         static void Main()
         {
             ApplicationConfiguration.Initialize();
-            Application.Run(new DoorAudioForm());
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.Run(new MainForm());
             GTAFolder.UpdateSettings();
         }
     }
