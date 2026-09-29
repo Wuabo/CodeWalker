@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CodeWalker.DoorAudio": {
+      "commandName": "Project",
+      "workingDirectory": ".."
+    }
+  }
+}

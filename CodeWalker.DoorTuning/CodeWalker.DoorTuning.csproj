@@ -7,8 +7,8 @@
     <ApplicationIcon>CW.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>CodeWalker Door Editor</AssemblyName>
-    <RootNamespace>CodeWalker.DoorEditor</RootNamespace>
+    <AssemblyName>CodeWalker Door Tuning</AssemblyName>
+    <RootNamespace>CodeWalker.DoorTuning</RootNamespace>
     <Copyright>Wuabo / dexyfex</Copyright>
     <Company>Wuabo</Company>
     <GenerateDependencyFile>false</GenerateDependencyFile>
@@ -25,18 +25,12 @@
     <ProjectReference Include="..\CodeWalker\CodeWalker.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="presets\door-sound-presets.json" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="FiveM\fxmanifest.lua" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="FiveM\gta5.meta" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
   <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(CodeWalkerPublish)' != 'true'">
     <ItemGroup>
       <BuildOutputFiles Include="$(OutDir)**\*.*" />
     </ItemGroup>
     <Copy SourceFiles="@(BuildOutputFiles)" DestinationFolder="$(ProjectDir)..\x64\$(Configuration)\%(RecursiveDir)" SkipUnchangedFiles="true" />
-    <Message Text="Copied Door Editor build output to x64\$(Configuration)" Importance="high" />
+    <Message Text="Copied Door Tuning build output to x64\$(Configuration)" Importance="high" />
   </Target>
 
 </Project>
