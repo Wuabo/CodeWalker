@@ -507,8 +507,9 @@ namespace CodeWalker.DoorEditor.Workspaces
                 _setStatus("Loading doortuning.ymt…");
                 await Task.Run(() =>
                 {
-                    _document = DoorTuningDocument.LoadFromGame(_rpfMan)
+                    var ymt = DoorTuningDocument.LoadFromGame(_rpfMan)
                         ?? throw new FileNotFoundException("Could not find " + DoorTuningDocument.GameRelativePath);
+                    _document = ymt.DoorTuning ?? DoorTuningDocument.FromYmt(ymt);
                     _sourcePath = DoorTuningDocument.GameRelativePath;
                 });
                 RefreshTuningList();
