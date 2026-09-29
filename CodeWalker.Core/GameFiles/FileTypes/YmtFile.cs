@@ -27,8 +27,6 @@ namespace CodeWalker.GameFiles
         public MCScenarioPointRegion? CScenarioPointRegion { get; set; }
         public ScenarioRegion? ScenarioRegion { get; set; }
 
-        public DoorTuningDocument? DoorTuning { get; set; }
-
 
 
 
@@ -112,10 +110,6 @@ namespace CodeWalker.GameFiles
                     if (root.NameHash == MetaName.CScenarioPointManifest)
                     {
                         LoadScenarioPointManifest(Pso);
-                    }
-                    else if (root.NameHash == MetaName.CDoorTuningFile)
-                    {
-                        LoadDoorTuning(Pso);
                     }
                 }
 
@@ -228,13 +222,6 @@ namespace CodeWalker.GameFiles
             //{ }
         }
 
-        private void LoadDoorTuning(PsoFile pso)
-        {
-            FileFormat = YmtFileFormat.PSO;
-            ContentType = YmtFileContentType.DoorTuning;
-            DoorTuning = DoorTuningDocument.FromYmt(this);
-        }
-
 
 
 
@@ -246,7 +233,6 @@ namespace CodeWalker.GameFiles
                 case YmtFileContentType.MapParentTxds: return SaveMapParentTxds();
                 case YmtFileContentType.ScenarioPointManifest: return SaveScenarioPointManifest();
                 case YmtFileContentType.ScenarioPointRegion: return SaveScenarioPointRegion();
-                case YmtFileContentType.DoorTuning: return SaveDoorTuning();
             }
 
             return null;
@@ -268,24 +254,6 @@ namespace CodeWalker.GameFiles
             if (ScenarioRegion != null)
             {
                 return ScenarioRegion.Save();
-            }
-            return null;
-        }
-
-        private byte[]? SaveDoorTuning()
-        {
-            if (DoorTuning != null)
-            {
-                var bytes = DoorTuning.Save();
-                // Keep Pso in sync for subsequent XML export
-                using var ms = new MemoryStream(bytes);
-                Pso = new PsoFile();
-                Pso.Load(ms);
-                return bytes;
-            }
-            if (Pso != null)
-            {
-                return Pso.Save();
             }
             return null;
         }
@@ -328,7 +296,6 @@ namespace CodeWalker.GameFiles
         MapParentTxds = 1,
         ScenarioPointManifest = 2,
         ScenarioPointRegion = 3,
-        DoorTuning = 4,
     }
 
 
