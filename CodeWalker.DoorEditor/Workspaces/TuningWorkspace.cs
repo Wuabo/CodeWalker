@@ -863,20 +863,23 @@ namespace CodeWalker.DoorEditor.Workspaces
                 var ymtPath = Path.Combine(folder, "doortuning.ymt");
                 var psoXmlPath = Path.Combine(folder, "doortuning.ymt.pso.xml");
 
-                // Binary PSO — what RPF Explorer / the game expect for .ymt
-                var psoBytes = _document.Save();
+                // Binary PSO — DoorEditor post-processes Core XmlPso output (align + CHKS).
+                var psoBytes = DoorTuningPsoExport.SaveBinary(_document);
                 if (psoBytes == null || psoBytes.Length < 8)
                     throw new InvalidDataException("PSO export produced an empty file.");
                 File.WriteAllBytes(ymtPath, psoBytes);
 
                 // CodeWalker Import XML only converts files named *.ymt.pso.xml
-                File.WriteAllText(psoXmlPath, _document.ToXml());
+                File.WriteAllText(psoXmlPath, DoorTuningPsoExport.ToCodeWalkerPsoXml(_document));
 
                 _setStatus($"Exported {_document.NamedTunings.Count} tunings, {_document.ModelMappings.Count} mappings → {folder}");
                 MessageBox.Show(this,
                     $"Exported {_document.NamedTunings.Count} named tunings / {_document.ModelMappings.Count} mappings:\n\n" +
-                    $"{ymtPath}\n  (binary PSO — drop into RPF / open in Explorer)\n\n" +
-                    $"{psoXmlPath}\n  (use Edit → Import XML… in RPF Explorer)",
+                    $"{ymtPath}\n  (binary PSO — use this in the game / replace in RPF)\n\n" +
+                    $"{psoXmlPath}\n  (Import XML in RPF Explorer)\n\n" +
+                    "Note: if you Import XML in RPF Explorer and Save there, CodeWalker Core\n" +
+                    "rewrites the YMT without game-safe padding/checksum — prefer this Export\n" +
+                    "binary for anything that goes in-game.",
                     "Export",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -918,12 +921,13 @@ namespace CodeWalker.DoorEditor.Workspaces
                     path = Path.ChangeExtension(path, null) + ".ymt.pso.xml";
                 }
 
-                File.WriteAllText(path, _document.ToXml());
+                File.WriteAllText(path, DoorTuningPsoExport.ToCodeWalkerPsoXml(_document));
                 _setStatus($"Exported XML ({_document.NamedTunings.Count} tunings) → {path}");
                 MessageBox.Show(this,
                     $"Exported {_document.NamedTunings.Count} named tunings / {_document.ModelMappings.Count} mappings:\n{path}\n\n" +
-                    "In CodeWalker RPF Explorer: Edit → Import XML…\n" +
-                    "(filename must end with .ymt.pso.xml to become binary .ymt)",
+                    "RPF Explorer: Edit → Import XML… (name must end with .ymt.pso.xml).\n" +
+                    "After import, prefer Door Editor Export binary for in-game use —\n" +
+                    "RPF Explorer Save does not add the game-safe CHKS/alignment.",
                     "Export XML",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
