@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -120,11 +121,13 @@ namespace CodeWalker.DoorEditor.Workspaces
             var header = new WorkspaceHeader("Door Tuning");
             var loadBtn = header.AddAction("Load from game");
             var openBtn = header.AddAction("Open…");
-            var exportBtn = header.AddAction("Export YMT…", primary: true);
+            var exportBtn = header.AddAction("Export…", primary: true);
+            var xmlBtn = header.AddAction("Export XML…");
             var fivemBtn = header.AddAction("FiveM resource…");
             loadBtn.Click += async (_, _) => await LoadFromGameAsync();
             openBtn.Click += (_, _) => OpenExisting();
             exportBtn.Click += (_, _) => ExportYmt();
+            xmlBtn.Click += (_, _) => ExportXml();
             fivemBtn.Click += (_, _) => ExportFiveMResource();
             return header;
         }
@@ -148,6 +151,7 @@ namespace CodeWalker.DoorEditor.Workspaces
 
             var tunings = new SideListPane("Named tunings", _tuningList, nameWrap);
             tunings.AddFooterButton("Add", primary: true).Click += (_, _) => AddTuning();
+            tunings.AddFooterButton("Rename").Click += (_, _) => RenameTuning();
             tunings.AddFooterButton("Delete").Click += (_, _) => DeleteTuning();
 
             var modelInputs = new Panel { Dock = DockStyle.Top, Height = 76, Padding = new Padding(0) };
@@ -164,7 +168,19 @@ namespace CodeWalker.DoorEditor.Workspaces
 
             var maps = new SideListPane("Model → tuning", _mappingList, modelInputs);
             maps.AddFooterButton("Add", primary: true).Click += (_, _) => AddMapping();
+            maps.AddFooterButton("Rename").Click += (_, _) => RenameMapping();
             maps.AddFooterButton("Delete").Click += (_, _) => DeleteMapping();
+
+            _tuningList.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode == Keys.F2) { RenameTuning(); e.Handled = true; }
+            };
+            _mappingList.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode == Keys.F2) { RenameMapping(); e.Handled = true; }
+            };
+            _tuningList.DoubleClick += (_, _) => RenameTuning();
+            _mappingList.DoubleClick += (_, _) => RenameMapping();
 
             split.Panel1.Controls.Add(tunings);
             split.Panel2.Controls.Add(maps);
@@ -516,7 +532,7 @@ namespace CodeWalker.DoorEditor.Workspaces
             using var dlg = new OpenFileDialog
             {
                 Title = "Open existing doortuning",
-                Filter = "Door tuning|*.ymt;*.xml;*.ymt.xml|YMT files|*.ymt|XML files|*.xml|All files|*.*",
+                Filter = "Door tuning|*.ymt;*.xml;*.ymt.xml;*.ymt.pso.xml|YMT (PSO/XML)|*.ymt|XML|*.xml;*.pso.xml|All files|*.*",
                 CheckFileExists = true
             };
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
@@ -585,44 +601,68 @@ namespace CodeWalker.DoorEditor.Workspaces
             if (_loadingUi) return;
             var nt = GetSelectedTuning();
             _loadingUi = true;
-            if (nt == null)
+            try
             {
-                _preview.SetTuning(null);
-                _loadingUi = false;
-                return;
+                if (nt == null)
+                {
+                    _preview.SetTuning(null);
+                    return;
+                }
+
+                var t = nt.Tuning ?? new DoorTuningParams();
+                _offset.Set(t.AutoOpenVolumeOffsetX, t.AutoOpenVolumeOffsetY, t.AutoOpenVolumeOffsetZ);
+                _boxMin.Set(t.TriggerBoxMinX, t.TriggerBoxMinY, t.TriggerBoxMinZ);
+                _boxMax.Set(t.TriggerBoxMaxX, t.TriggerBoxMaxY, t.TriggerBoxMaxZ);
+                _radiusMod.Value = t.AutoOpenRadiusModifier;
+                _openRate.Value = t.AutoOpenRate;
+                _cosine.Value = t.AutoOpenCosineAngleBetweenThreshold;
+                _breakImpulse.Value = t.BreakingImpulse;
+                _mass.Value = t.MassMultiplier;
+                _weapon.Value = t.WeaponImpulseMultiplier;
+                _rotLimit.Value = t.RotationLimitAngle;
+                _angVel.Value = t.TorqueAngularVelocityLimit;
+                _closeTaper.Checked = t.AutoOpenCloseRateTaper;
+                _useTrigger.Checked = t.UseAutoOpenTriggerBox;
+                _customTrigger.Checked = t.CustomTriggerBox;
+                _breakable.Checked = t.BreakableByVehicle;
+                _latch.Checked = t.ShouldLatchShut;
+
+                // IndexOf on ObjectCollection can be picky — match by string.
+                int dirIdx = -1;
+                var dir = string.IsNullOrWhiteSpace(t.StdDoorRotDir) ? "StdDoorOpenBothDir" : t.StdDoorRotDir;
+                for (int i = 0; i < _rotDir.Items.Count; i++)
+                {
+                    if (string.Equals(_rotDir.Items[i]?.ToString(), dir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        dirIdx = i;
+                        break;
+                    }
+                }
+                if (_rotDir.Items.Count > 0)
+                    _rotDir.SelectedIndex = dirIdx >= 0 ? dirIdx : 0;
+
+                var flags = t.Flags ?? new List<string>();
+                foreach (var c in _flagChecks)
+                {
+                    try { c.Checked = flags.Contains(c.Text); }
+                    catch { c.Checked = false; }
+                }
+
+                _preview.SetTuning(t);
+                var map = _document.ModelMappings.FirstOrDefault(m =>
+                    string.Equals(m.TuningName, nt.Name, StringComparison.OrdinalIgnoreCase));
+                var guess = DoorPreviewPanel.GuessSpecialAttribute(map?.ModelName ?? nt.Name);
+                _preview.SetSpecialAttribute(guess);
+                SyncMotionCombo(guess);
             }
-
-            var t = nt.Tuning;
-            _offset.Set(t.AutoOpenVolumeOffsetX, t.AutoOpenVolumeOffsetY, t.AutoOpenVolumeOffsetZ);
-            _boxMin.Set(t.TriggerBoxMinX, t.TriggerBoxMinY, t.TriggerBoxMinZ);
-            _boxMax.Set(t.TriggerBoxMaxX, t.TriggerBoxMaxY, t.TriggerBoxMaxZ);
-            _radiusMod.Value = t.AutoOpenRadiusModifier;
-            _openRate.Value = t.AutoOpenRate;
-            _cosine.Value = t.AutoOpenCosineAngleBetweenThreshold;
-            _breakImpulse.Value = t.BreakingImpulse;
-            _mass.Value = t.MassMultiplier;
-            _weapon.Value = t.WeaponImpulseMultiplier;
-            _rotLimit.Value = t.RotationLimitAngle;
-            _angVel.Value = t.TorqueAngularVelocityLimit;
-            _closeTaper.Checked = t.AutoOpenCloseRateTaper;
-            _useTrigger.Checked = t.UseAutoOpenTriggerBox;
-            _customTrigger.Checked = t.CustomTriggerBox;
-            _breakable.Checked = t.BreakableByVehicle;
-            _latch.Checked = t.ShouldLatchShut;
-
-            var dirIdx = _rotDir.Items.IndexOf(t.StdDoorRotDir);
-            _rotDir.SelectedIndex = dirIdx >= 0 ? dirIdx : 0;
-
-            foreach (var c in _flagChecks)
-                c.Checked = t.Flags.Contains(c.Text);
-
-            _preview.SetTuning(t);
-            var map = _document.ModelMappings.FirstOrDefault(m =>
-                string.Equals(m.TuningName, nt.Name, StringComparison.OrdinalIgnoreCase));
-            var guess = DoorPreviewPanel.GuessSpecialAttribute(map?.ModelName ?? nt.Name);
-            _preview.SetSpecialAttribute(guess);
-            SyncMotionCombo(guess);
-            _loadingUi = false;
+            catch (Exception ex)
+            {
+                _setStatus("UI apply failed: " + ex.Message);
+            }
+            finally
+            {
+                _loadingUi = false;
+            }
         }
 
         private void PushUiToTuning()
@@ -691,6 +731,51 @@ namespace CodeWalker.DoorEditor.Workspaces
             _setStatus($"Deleted {nt.Name}");
         }
 
+        private void RenameTuning()
+        {
+            var nt = GetSelectedTuning();
+            if (nt == null)
+            {
+                MessageBox.Show(this, "Select a named tuning to rename.", "Door Tuning",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using var dlg = new NameInputDialog("Rename tuning", "New tuning name", nt.Name);
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            var name = dlg.Value;
+            if (string.IsNullOrEmpty(name))
+            {
+                MessageBox.Show(this, "Name cannot be empty.", "Door Tuning",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (string.Equals(name, nt.Name, StringComparison.Ordinal))
+                return;
+            if (_document.NamedTunings.Any(t =>
+                    !ReferenceEquals(t, nt) &&
+                    string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(this, "That named tuning already exists.", "Door Tuning",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var old = nt.Name;
+            nt.Name = name;
+            // Keep model mappings pointing at this tuning.
+            foreach (var m in _document.ModelMappings)
+            {
+                if (string.Equals(m.TuningName, old, StringComparison.OrdinalIgnoreCase))
+                    m.TuningName = name;
+            }
+
+            RefreshTuningList();
+            RefreshMappingList();
+            _tuningList.SelectedItem = name;
+            _setStatus($"Renamed tuning {old} → {name}");
+        }
+
         private void AddMapping()
         {
             var model = (_modelName.Text ?? string.Empty).Trim();
@@ -706,6 +791,47 @@ namespace CodeWalker.DoorEditor.Workspaces
             _setStatus($"Mapped {model} → {tuning}");
         }
 
+        private void RenameMapping()
+        {
+            if (_mappingList.SelectedIndex < 0 ||
+                _mappingList.SelectedIndex >= _document.ModelMappings.Count)
+            {
+                MessageBox.Show(this, "Select a model → tuning mapping to rename.", "Door Tuning",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var map = _document.ModelMappings[_mappingList.SelectedIndex];
+            using var modelDlg = new NameInputDialog("Rename mapping", "Model name", map.ModelName);
+            if (modelDlg.ShowDialog(this) != DialogResult.OK) return;
+            var model = modelDlg.Value;
+            if (string.IsNullOrEmpty(model))
+            {
+                MessageBox.Show(this, "Model name cannot be empty.", "Door Tuning",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using var tuningDlg = new NameInputDialog("Rename mapping", "Tuning name", map.TuningName);
+            if (tuningDlg.ShowDialog(this) != DialogResult.OK) return;
+            var tuning = tuningDlg.Value;
+            if (string.IsNullOrEmpty(tuning))
+            {
+                MessageBox.Show(this, "Tuning name cannot be empty.", "Door Tuning",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var old = $"{map.ModelName} → {map.TuningName}";
+            map.ModelName = model;
+            map.TuningName = tuning;
+            var idx = _mappingList.SelectedIndex;
+            RefreshMappingList();
+            if (idx >= 0 && idx < _mappingList.Items.Count)
+                _mappingList.SelectedIndex = idx;
+            _setStatus($"Renamed mapping {old} → {model} → {tuning}");
+        }
+
         private void DeleteMapping()
         {
             if (_mappingList.SelectedIndex < 0) return;
@@ -717,20 +843,43 @@ namespace CodeWalker.DoorEditor.Workspaces
         private void ExportYmt()
         {
             PushUiToTuning();
+            if (_document.NamedTunings.Count == 0 && _document.ModelMappings.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "Nothing to export — the document has no named tunings or model mappings.\nOpen a doortuning file or Load from game first.",
+                    "Export", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             using var folderDlg = new FolderBrowserDialog
             {
-                Description = "Export doortuning.ymt",
+                Description = "Export binary doortuning.ymt + CodeWalker .ymt.pso.xml",
                 UseDescriptionForTitle = true
             };
             if (folderDlg.ShowDialog(this) != DialogResult.OK) return;
             try
             {
-                var ymtPath = Path.Combine(folderDlg.SelectedPath, "doortuning.ymt");
-                var xmlPath = Path.Combine(folderDlg.SelectedPath, "doortuning.ymt.xml");
-                File.WriteAllBytes(ymtPath, _document.Save());
-                File.WriteAllText(xmlPath, _document.ToXml());
-                _setStatus($"Exported {ymtPath}");
-                MessageBox.Show(this, $"Exported:\n{ymtPath}\n{xmlPath}", "Door Tuning", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                var folder = folderDlg.SelectedPath;
+                var ymtPath = Path.Combine(folder, "doortuning.ymt");
+                var psoXmlPath = Path.Combine(folder, "doortuning.ymt.pso.xml");
+
+                // Binary PSO — what RPF Explorer / the game expect for .ymt
+                var psoBytes = _document.Save();
+                if (psoBytes == null || psoBytes.Length < 8)
+                    throw new InvalidDataException("PSO export produced an empty file.");
+                File.WriteAllBytes(ymtPath, psoBytes);
+
+                // CodeWalker Import XML only converts files named *.ymt.pso.xml
+                File.WriteAllText(psoXmlPath, _document.ToXml());
+
+                _setStatus($"Exported {_document.NamedTunings.Count} tunings, {_document.ModelMappings.Count} mappings → {folder}");
+                MessageBox.Show(this,
+                    $"Exported {_document.NamedTunings.Count} named tunings / {_document.ModelMappings.Count} mappings:\n\n" +
+                    $"{ymtPath}\n  (binary PSO — drop into RPF / open in Explorer)\n\n" +
+                    $"{psoXmlPath}\n  (use Edit → Import XML… in RPF Explorer)",
+                    "Export",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -738,9 +887,64 @@ namespace CodeWalker.DoorEditor.Workspaces
             }
         }
 
+        private void ExportXml()
+        {
+            PushUiToTuning();
+            if (_document.NamedTunings.Count == 0 && _document.ModelMappings.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "Nothing to export — the document has no named tunings or model mappings.\nOpen a doortuning file or Load from game first.",
+                    "Export XML", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using var dlg = new SaveFileDialog
+            {
+                Title = "Export doortuning PSO XML (for CodeWalker Import XML)",
+                Filter = "CodeWalker PSO XML (*.ymt.pso.xml)|*.ymt.pso.xml|XML (*.xml)|*.xml|All files (*.*)|*.*",
+                FileName = "doortuning.ymt.pso.xml",
+                AddExtension = true,
+                DefaultExt = "ymt.pso.xml"
+            };
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            try
+            {
+                var path = dlg.FileName;
+                // Ensure CodeWalker-recognised double extension when user picked *.xml
+                if (path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                    && !path.EndsWith(".pso.xml", StringComparison.OrdinalIgnoreCase)
+                    && !path.EndsWith(".ymt.xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    path = Path.ChangeExtension(path, null) + ".ymt.pso.xml";
+                }
+
+                File.WriteAllText(path, _document.ToXml());
+                _setStatus($"Exported XML ({_document.NamedTunings.Count} tunings) → {path}");
+                MessageBox.Show(this,
+                    $"Exported {_document.NamedTunings.Count} named tunings / {_document.ModelMappings.Count} mappings:\n{path}\n\n" +
+                    "In CodeWalker RPF Explorer: Edit → Import XML…\n" +
+                    "(filename must end with .ymt.pso.xml to become binary .ymt)",
+                    "Export XML",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "Export XML failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         private void ExportFiveMResource()
         {
             PushUiToTuning();
+            if (_document.NamedTunings.Count == 0 && _document.ModelMappings.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "Nothing to export — the document has no named tunings or model mappings.\nOpen a doortuning file or Load from game first.",
+                    "FiveM export", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             using var nameDlg = new ResourceNameDialog(_sourcePath != null
                 ? FivemResourceExport.SanitizeResourceName(Path.GetFileNameWithoutExtension(_sourcePath))
                 : "doortuning");
@@ -757,10 +961,10 @@ namespace CodeWalker.DoorEditor.Workspaces
             {
                 var dest = FivemResourceExport.ExportBundle(folderDlg.SelectedPath, nameDlg.ResourceName, _document);
                 var resourceName = FivemResourceExport.SanitizeResourceName(nameDlg.ResourceName);
-                _setStatus($"FiveM resource exported: {dest}");
+                _setStatus($"FiveM resource exported: {dest} ({_document.NamedTunings.Count} tunings)");
                 MessageBox.Show(this,
                     $"FiveM resource created:\n{dest}\n\n" +
-                    $"• doortuning.ymt (Meta XML)\n" +
+                    $"• doortuning.ymt (Meta XML — {_document.NamedTunings.Count} tunings)\n" +
                     $"• gta5.meta → resources:/{resourceName}/doortuning\n" +
                     $"• fxmanifest.lua (replace_level_meta)\n\n" +
                     "Add ensure " + resourceName + " to server.cfg.",

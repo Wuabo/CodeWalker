@@ -6,7 +6,7 @@ using CodeWalker.DoorEditor.Controls;
 
 namespace CodeWalker.DoorEditor.Theme
 {
-    /// <summary>Dark palette inspired by GTA5-Door-Editor.</summary>
+    /// <summary>Dark UI palette for the Door Editor.</summary>
     public static class AppTheme
     {
         public static readonly Color Background = Color.FromArgb(22, 25, 33);

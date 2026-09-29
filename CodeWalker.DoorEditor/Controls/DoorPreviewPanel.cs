@@ -391,7 +391,7 @@ namespace CodeWalker.DoorEditor.Controls
         }
 
         /// <summary>
-        /// Open → hold → close, matching GTA5-Door-Editor preview cycle.
+        /// Open → hold → close preview cycle.
         /// BothDir still previews a single swing (game allows both; preview shows +).
         /// </summary>
         private void UpdateMotionCycle(float u)
@@ -423,8 +423,8 @@ namespace CodeWalker.DoorEditor.Controls
         }
 
         /// <summary>
-        /// Door motions matching GTA5-Door-Editor (Three.js Y-up formulas).
-        /// Vertices stay GTA Z-up; we convert ↔ Y-up around the Door-Editor apply step.
+        /// Door motions in door-local space (GTA axes; preview maps to screen).
+        /// Vertices stay GTA Z-up; convert ↔ Y-up for the preview apply step.
         /// GTA (x,y,z) → Three (x, z, -y).
         /// </summary>
         private void ApplyDoorMotion(ref float x, ref float y, ref float z)
@@ -448,7 +448,7 @@ namespace CodeWalker.DoorEditor.Controls
 
             switch (_specialAttribute)
             {
-                case "5": // Garage — bottom hinge, tip up (Door-Editor case 5)
+                case "5": // Garage — bottom hinge, tip up
                 {
                     float H = sizeY;
                     float t = amount * Math.Min(OpenAngleRad(), MathF.PI / 2f);
@@ -497,7 +497,7 @@ namespace CodeWalker.DoorEditor.Controls
                 case "9": // Barrier
                 case "12": // Rail crossing
                 {
-                    // Door-Editor: rotation.set(0, 0, -dirSign * openAngle) — Rz in Three XY
+                    // Rz in Y-up preview space (maps from GTA local)
                     float ang = -sign * amount * OpenAngleRad();
                     float c = MathF.Cos(ang), s = MathF.Sin(ang);
                     float tx1 = tx * c - ty * s;
@@ -509,7 +509,7 @@ namespace CodeWalker.DoorEditor.Controls
                 case "7": // Normal hinged
                 default:
                 {
-                    // Door-Editor: rotation.set(0, dirSign * openAngle, 0) — Ry (yaw around up)
+                    // Ry yaw around up in Y-up preview space
                     float ang = sign * amount * OpenAngleRad();
                     float c = MathF.Cos(ang), s = MathF.Sin(ang);
                     float tx1 = tx * c + tz * s;

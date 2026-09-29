@@ -208,6 +208,7 @@ namespace CodeWalker.DoorEditor.Controls
             set
             {
                 int next = value;
+                if (_items.Count == 0) { _selectedIndex = -1; Invalidate(); return; }
                 if (next < -1) next = -1;
                 if (next >= _items.Count) next = _items.Count - 1;
                 if (_selectedIndex == next) return;
