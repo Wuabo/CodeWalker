@@ -1,0 +1,62 @@
+[
+  {
+    "name": "No Sound",
+    "sounds": "null",
+    "tuningParams": "null",
+    "maxOcclusion": 0.0
+  },
+  {
+    "name": "Convenience Store Door",
+    "sounds": "hash_f1e8d9fe",
+    "tuningParams": "hash_0246d335",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Pushed Door",
+    "sounds": "hash_7f11a20c",
+    "tuningParams": "hash_0246d335",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Elevator Door",
+    "sounds": "hash_37d314bf",
+    "tuningParams": "hash_1ec7576e",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Jail Door",
+    "sounds": "hash_0d2cd7d4",
+    "tuningParams": "hash_0246d335",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Sliding Door",
+    "sounds": "hash_c9e95a9a",
+    "tuningParams": "hash_25b9f39f",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Normal Gate",
+    "sounds": "hash_d5377a40",
+    "tuningParams": "hash_c85140b1",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Slide Gate",
+    "sounds": "hash_f0d1de2a",
+    "tuningParams": "hash_8c484a48",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Slide Gate 2",
+    "sounds": "hash_a526a46e",
+    "tuningParams": "hash_8c484a48",
+    "maxOcclusion": 0.7
+  },
+  {
+    "name": "Up-Down Gate",
+    "sounds": "hash_0ca57a12",
+    "tuningParams": "hash_943a667a",
+    "maxOcclusion": 0.7
+  }
+]

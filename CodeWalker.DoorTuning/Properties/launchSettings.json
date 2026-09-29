@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CodeWalker.DoorTuning": {
+      "commandName": "Project",
+      "workingDirectory": ".."
+    }
+  }
+}
