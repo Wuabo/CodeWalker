@@ -49,17 +49,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Update="Properties\Settings.Designer.cs">
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Settings.settings</DependentUpon>
-    </Compile>
-  </ItemGroup>
-
-  <ItemGroup>
+    <!-- Hand-written Settings.cs (SettingsManager) replaces the designer-generated partial. -->
+    <Compile Remove="Properties\Settings.Designer.cs" />
+    <None Include="Properties\Settings.Designer.cs" />
     <None Update="Properties\Settings.settings">
-      <Generator>PublicSettingsSingleFileGenerator</Generator>
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+      <Generator></Generator>
     </None>
   </ItemGroup>
 

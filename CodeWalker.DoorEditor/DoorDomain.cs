@@ -49,8 +49,6 @@ namespace CodeWalker.DoorEditor
                 return DoorTuningDocument.FromXml(DecodeText(bytes));
 
             var ymt = LoadYmtFromDisk(path, bytes);
-            if (ymt.DoorTuning != null)
-                return ymt.DoorTuning;
             if (ymt.Pso != null)
                 return DoorTuningDocument.FromYmt(ymt);
 
@@ -66,12 +64,10 @@ namespace CodeWalker.DoorEditor
             var name = Path.GetFileName(path);
             var ymt = new YmtFile { Name = name, FilePath = path };
 
-            // FiveM resources often ship Meta XML content inside doortuning.ymt
+            // FiveM resources often ship Meta XML content inside doortuning.ymt —
+            // that path is handled by LoadFromPath via FromXml; here we only load PSO.
             if (LooksLikeXml(bytes) || LooksLikeXmlPath(path))
             {
-                var doc = DoorTuningDocument.FromXml(DecodeText(bytes));
-                ymt.DoorTuning = doc;
-                ymt.ContentType = YmtFileContentType.DoorTuning;
                 ymt.Loaded = true;
                 return ymt;
             }
@@ -79,8 +75,6 @@ namespace CodeWalker.DoorEditor
             if (bytes.Length >= 4 && BitConverter.ToUInt32(bytes, 0) == Rsc7Magic)
             {
                 ymt.Load(bytes);
-                if (ymt.Pso != null)
-                    ymt.DoorTuning = DoorTuningDocument.FromYmt(ymt);
                 return ymt;
             }
 
@@ -92,9 +86,7 @@ namespace CodeWalker.DoorEditor
                 {
                     var entry = CreateBinaryEntry(name, path, bytes.Length);
                     ymt.Load(bytes, entry);
-                    if (ymt.DoorTuning == null && ymt.Pso != null)
-                        ymt.DoorTuning = DoorTuningDocument.FromYmt(ymt);
-                    if (ymt.Pso != null || ymt.DoorTuning != null)
+                    if (ymt.Pso != null)
                         return ymt;
                 }
                 catch (Exception ex)
@@ -108,9 +100,6 @@ namespace CodeWalker.DoorEditor
             var text = DecodeText(bytes).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
             if (text.StartsWith('<'))
             {
-                var doc = DoorTuningDocument.FromXml(text);
-                ymt.DoorTuning = doc;
-                ymt.ContentType = YmtFileContentType.DoorTuning;
                 ymt.Loaded = true;
                 return ymt;
             }
