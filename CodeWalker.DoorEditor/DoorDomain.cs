@@ -43,19 +43,15 @@ namespace CodeWalker.DoorEditor
         public static DoorTuningDocument LoadFromPath(string path)
         {
             var bytes = File.ReadAllBytes(path);
-            // Prefer content sniff over extension — .ymt may be Meta XML or PSO binary;
-            // .ymt.pso.xml is always Meta XML from CodeWalker.
-            if (LooksLikeXml(bytes) || LooksLikeXmlPath(path))
+
+            if (LooksLikeXml(bytes) || path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
                 return DoorTuningDocument.FromXml(DecodeText(bytes));
 
             var ymt = LoadYmtFromDisk(path, bytes);
-            if (ymt.DoorTuning != null)
-                return ymt.DoorTuning;
-            if (ymt.Pso != null)
-                return DoorTuningDocument.FromYmt(ymt);
-
-            throw new InvalidDataException(
-                "Not a doortuning file. Expected PSO doortuning.ymt (PSIN) or Meta XML (.xml / .ymt.pso.xml).");
+            if (ymt.Pso == null && ymt.DoorTuning == null)
+                throw new InvalidDataException(
+                    "Not a doortuning file. Expected PSO doortuning.ymt or Meta XML.");
+            return ymt.DoorTuning ?? DoorTuningDocument.FromYmt(ymt);
         }
 
         public static YmtFile LoadYmtFromDisk(string path) =>
@@ -66,8 +62,8 @@ namespace CodeWalker.DoorEditor
             var name = Path.GetFileName(path);
             var ymt = new YmtFile { Name = name, FilePath = path };
 
-            // FiveM resources often ship Meta XML content inside doortuning.ymt
-            if (LooksLikeXml(bytes) || LooksLikeXmlPath(path))
+            // FiveM / GTA5-Door-Editor often ship Meta XML as doortuning.ymt
+            if (LooksLikeXml(bytes))
             {
                 var doc = DoorTuningDocument.FromXml(DecodeText(bytes));
                 ymt.DoorTuning = doc;
@@ -84,23 +80,13 @@ namespace CodeWalker.DoorEditor
                 return ymt;
             }
 
-            // Vanilla doortuning.ymt is raw PSO (PSIN…). Detect by magic bytes first —
-            // more reliable than stream helpers when callers left Position ≠ 0.
-            if (LooksLikePso(bytes) || IsPsoStream(bytes))
+            using (var ms = new MemoryStream(bytes))
             {
-                try
+                if (PsoFile.IsPSO(ms))
                 {
                     var entry = CreateBinaryEntry(name, path, bytes.Length);
                     ymt.Load(bytes, entry);
-                    if (ymt.DoorTuning == null && ymt.Pso != null)
-                        ymt.DoorTuning = DoorTuningDocument.FromYmt(ymt);
-                    if (ymt.Pso != null || ymt.DoorTuning != null)
-                        return ymt;
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidDataException(
-                        "Failed to parse PSO doortuning.ymt: " + ex.Message, ex);
+                    return ymt;
                 }
             }
 
@@ -115,29 +101,8 @@ namespace CodeWalker.DoorEditor
                 return ymt;
             }
 
-            var magic = bytes.Length >= 4
-                ? $"{(char)bytes[0]}{(char)bytes[1]}{(char)bytes[2]}{(char)bytes[3]}"
-                : "(too short)";
             throw new InvalidDataException(
-                $"Unsupported doortuning format (magic '{magic}'). Expected PSIN PSO .ymt or Meta XML.");
-        }
-
-        private static bool LooksLikeXmlPath(string path) =>
-            path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".ymt.xml", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".pso.xml", StringComparison.OrdinalIgnoreCase);
-
-        private static bool LooksLikePso(byte[] bytes) =>
-            bytes.Length >= 4
-            && bytes[0] == (byte)'P'
-            && bytes[1] == (byte)'S'
-            && bytes[2] == (byte)'I'
-            && bytes[3] == (byte)'N';
-
-        private static bool IsPsoStream(byte[] bytes)
-        {
-            using var ms = new MemoryStream(bytes);
-            return PsoFile.IsPSO(ms);
+                "Unsupported doortuning.ymt format. Use vanilla PSO .ymt, Meta XML, or a FiveM resource doortuning.ymt.");
         }
 
         private static bool LooksLikeXml(byte[] bytes)

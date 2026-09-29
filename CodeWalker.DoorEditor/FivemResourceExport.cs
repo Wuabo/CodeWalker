@@ -6,7 +6,7 @@ using CodeWalker.GameFiles;
 namespace CodeWalker.DoorEditor
 {
     /// <summary>
-    /// FiveM resource bundle: folder with doortuning.ymt (Meta XML),
+    /// FiveM resource bundle matching GTA5-Door-Editor: folder with doortuning.ymt (Meta XML),
     /// gta5.meta (replace_level_meta), and fxmanifest.lua.
     /// </summary>
     public static class FivemResourceExport
@@ -60,7 +60,7 @@ namespace CodeWalker.DoorEditor
             var dest = Path.Combine(resourcesParentFolder, name);
             Directory.CreateDirectory(dest);
 
-            // Meta XML written as doortuning.ymt (not binary PSO).
+            // Same as GTA5-Door-Editor: Meta XML written as doortuning.ymt (not binary PSO).
             File.WriteAllText(Path.Combine(dest, "doortuning.ymt"), document.ToXml());
             File.WriteAllText(Path.Combine(dest, "gta5.meta"), Gta5MetaForResource(name));
             File.WriteAllText(Path.Combine(dest, "fxmanifest.lua"), FxManifestTemplate());
