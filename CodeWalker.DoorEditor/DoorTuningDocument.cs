@@ -120,8 +120,8 @@ namespace CodeWalker.DoorEditor
         public float AutoOpenVolumeOffsetZ { get; set; }
         public List<string> Flags { get; set; } = new();
         public float AutoOpenRadiusModifier { get; set; } = 1f;
-        public float AutoOpenRate { get; set; } = 1f;
-        public float AutoOpenCosineAngleBetweenThreshold { get; set; }
+        public float AutoOpenRate { get; set; } = 0.5f;
+        public float AutoOpenCosineAngleBetweenThreshold { get; set; } = -1f;
         public bool AutoOpenCloseRateTaper { get; set; }
         public bool UseAutoOpenTriggerBox { get; set; }
         public bool CustomTriggerBox { get; set; }
@@ -137,7 +137,7 @@ namespace CodeWalker.DoorEditor
         public float MassMultiplier { get; set; } = 1f;
         public float WeaponImpulseMultiplier { get; set; } = 1f;
         public float RotationLimitAngle { get; set; }
-        public float TorqueAngularVelocityLimit { get; set; }
+        public float TorqueAngularVelocityLimit { get; set; } = 5f;
         public string StdDoorRotDir { get; set; } = "StdDoorOpenBothDir";
 
         public static DoorTuningParams FromXml(XElement? el)
@@ -162,8 +162,8 @@ namespace CodeWalker.DoorEditor
             }
 
             t.AutoOpenRadiusModifier = ChildF(el, "AutoOpenRadiusModifier", 1f);
-            t.AutoOpenRate = ChildF(el, "AutoOpenRate", 1f);
-            t.AutoOpenCosineAngleBetweenThreshold = ChildF(el, "AutoOpenCosineAngleBetweenThreshold");
+            t.AutoOpenRate = ChildF(el, "AutoOpenRate", 0.5f);
+            t.AutoOpenCosineAngleBetweenThreshold = ChildF(el, "AutoOpenCosineAngleBetweenThreshold", -1f);
             t.AutoOpenCloseRateTaper = ChildB(el, "AutoOpenCloseRateTaper");
             t.UseAutoOpenTriggerBox = ChildB(el, "UseAutoOpenTriggerBox");
             t.CustomTriggerBox = ChildB(el, "CustomTriggerBox");
@@ -190,7 +190,7 @@ namespace CodeWalker.DoorEditor
             t.MassMultiplier = ChildF(el, "MassMultiplier", 1f);
             t.WeaponImpulseMultiplier = ChildF(el, "WeaponImpulseMultiplier", 1f);
             t.RotationLimitAngle = ChildF(el, "RotationLimitAngle");
-            t.TorqueAngularVelocityLimit = ChildF(el, "TorqueAngularVelocityLimit");
+            t.TorqueAngularVelocityLimit = ChildF(el, "TorqueAngularVelocityLimit", 5f);
             t.StdDoorRotDir = el.Element("StdDoorRotDir")?.Value?.Trim() ?? "StdDoorOpenBothDir";
             if (string.IsNullOrEmpty(t.StdDoorRotDir))
                 t.StdDoorRotDir = "StdDoorOpenBothDir";

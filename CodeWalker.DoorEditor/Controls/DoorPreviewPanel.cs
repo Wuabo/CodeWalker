@@ -36,6 +36,9 @@ namespace CodeWalker.DoorEditor.Controls
         private float _pulse;
         private float _motionAmount; // 0..1 how far open
         private float _motionSign = 1f; // +1 / -1 swing direction
+        private float _bothFlip = 1f;   // alternates when StdDoorOpenBothDir
+        private int _motionPhase; // 0 closed-hold, 1 opening, 2 open-hold, 3 closing
+        private float _phaseHold;
         private bool _animateOpen = true;
         private bool _showPed = true;
         private string _statusText = "Drop a .ydr or use Load YDR…";
@@ -94,11 +97,11 @@ namespace CodeWalker.DoorEditor.Controls
             _animTimer = new System.Windows.Forms.Timer { Interval = 40 };
             _animTimer.Tick += (_, _) =>
             {
+                const float dt = 0.04f;
                 _pulse = (_pulse + 0.05f) % (MathF.PI * 2f);
-                // Only types with a dedicated mechanical open path get a motion preview.
-                // Type 7 (normal hinged) is physics/push — keep mesh static in preview.
+                // Motion preview for mechanical / hinged door types.
                 if (_animateOpen && !_dragging && UsesMotionPreview(_specialAttribute))
-                    UpdateMotionCycle(_pulse / (MathF.PI * 2f));
+                    TickMotion(dt);
                 else
                     _motionAmount = 0f;
                 Invalidate();
@@ -163,12 +166,20 @@ namespace CodeWalker.DoorEditor.Controls
         public void SetTuning(DoorTuningParams? tuning)
         {
             _tuning = tuning;
+            // Keep phase; live edits to rate/torque/angle apply on next tick.
             Invalidate();
         }
 
         public void SetSpecialAttribute(string attr)
         {
-            _specialAttribute = string.IsNullOrWhiteSpace(attr) ? "7" : attr.Trim();
+            var next = string.IsNullOrWhiteSpace(attr) ? "7" : attr.Trim();
+            if (next != _specialAttribute)
+            {
+                _specialAttribute = next;
+                _motionPhase = 0;
+                _phaseHold = 0f;
+                _motionAmount = 0f;
+            }
             if (!UsesMotionPreview(_specialAttribute))
                 _motionAmount = 0f;
             if (_mesh != null && !string.IsNullOrEmpty(_mesh.Name))
@@ -421,50 +432,152 @@ namespace CodeWalker.DoorEditor.Controls
         }
 
         /// <summary>
-        /// Types with a dedicated engine open path worth previewing.
-        /// 7 = normal hinged (player push / physics) — no looping motion preview.
+        /// Door types whose open path is worth looping in the preview.
         /// </summary>
         public static bool UsesMotionPreview(string? attr) => attr switch
         {
             "5" => true,  // garage — tip up
+            "7" => true,  // normal hinged (preview swing; in-game is physics/push)
             "8" => true,  // sliding horizontal
             "9" => true,  // barrier arm
             "10" => true, // sliding vertical
             "12" => true, // rail crossing
-            _ => false    // 7 normal door + unknown
+            _ => false
         };
 
         private float OpenAngleRad()
         {
-            float limit = _tuning?.RotationLimitAngle ?? 0f;
-            if (limit <= 0) limit = MathF.PI / 2f;
-            else if (limit > MathF.PI * 2f + 0.01f) limit = limit * MathF.PI / 180f;
-            return limit;
+            // Engine: non-zero RotationLimitAngle is degrees → radians (Door.cpp GetLimitAngle).
+            float limitDeg = _tuning?.RotationLimitAngle ?? 0f;
+            if (limitDeg <= 0f)
+            {
+                // Type 7 default ~90°; garage tip also uses ~π/2 when unset.
+                return MathF.PI / 2f;
+            }
+            return Math.Clamp(limitDeg, 0f, 180f) * (MathF.PI / 180f);
         }
 
-        private static float EaseInOut(float t)
+        private bool IsBothDir()
         {
-            t = Math.Clamp(t, 0f, 1f);
-            return t * t * (3f - 2f * t);
+            var dir = (_tuning?.StdDoorRotDir ?? "").ToLowerInvariant();
+            return dir.Contains("both") || string.IsNullOrEmpty(dir);
+        }
+
+        private void UpdateMotionSign()
+        {
+            var dir = (_tuning?.StdDoorRotDir ?? "").ToLowerInvariant();
+            if (dir.Contains("both") || string.IsNullOrEmpty(dir))
+                _motionSign = _bothFlip;
+            else if (dir.Contains("neg"))
+                _motionSign = -1f;
+            else
+                _motionSign = 1f; // StdDoorOpenPosDir / unknown
+        }
+
+        private float OpenHoldSeconds()
+        {
+            // DelayDoorClosingForPlayer keeps the door open longer after a push / auto-open.
+            if (_tuning?.Flags != null)
+            {
+                foreach (var f in _tuning.Flags)
+                {
+                    if (f.Contains("DelayDoorClosing", StringComparison.OrdinalIgnoreCase))
+                        return 1.35f;
+                }
+            }
+            return 0.55f;
         }
 
         /// <summary>
-        /// Open → hold → close preview cycle.
-        /// BothDir still previews a single swing (game allows both; preview shows +).
+        /// Open → hold → close cycle driven by AutoOpenRate / taper / torque / latch / mass / rot dir.
         /// </summary>
-        private void UpdateMotionCycle(float u)
+        private void TickMotion(float dt)
         {
-            var dir = (_tuning?.StdDoorRotDir ?? "").ToLowerInvariant();
-            _motionSign = dir.Contains("neg") && !dir.Contains("both") ? -1f : 1f;
+            UpdateMotionSign();
 
-            if (u < 0.08f)
-                _motionAmount = 0f;
-            else if (u < 0.5f)
-                _motionAmount = EaseInOut((u - 0.08f) / 0.42f);
-            else if (u < 0.58f)
-                _motionAmount = 1f;
-            else
-                _motionAmount = EaseInOut(1f - (u - 0.58f) / 0.42f);
+            float rate = _tuning?.AutoOpenRate ?? 0.5f;
+            if (rate < 0.001f) rate = 0.001f;
+
+            float torque = _tuning?.TorqueAngularVelocityLimit ?? 5f;
+            // Engine clamps angular velocity with this; 0 freezes motion.
+            if (torque <= 0f)
+                return;
+
+            bool taper = _tuning?.AutoOpenCloseRateTaper ?? false;
+            bool latch = _tuning?.ShouldLatchShut ?? false;
+            float mass = Math.Max(0.01f, _tuning?.MassMultiplier ?? 1f);
+            // Mass does not change auto-open rate in engine; light preview influence only.
+            float massScale = 1f / MathF.Sqrt(Math.Clamp(mass, 0.25f, 4f));
+
+            float effectiveRate = rate * massScale;
+            // Taper near full open (opening) and near shut (closing) — Door.cpp window 0.8→0.99
+            if (taper)
+            {
+                float a = _motionAmount;
+                if (a > 0.8f && a < 0.99f)
+                {
+                    float taperRatio = Math.Max((0.99f - a) / (0.99f - 0.8f), 0.01f);
+                    effectiveRate *= taperRatio;
+                }
+                else if (a > 0.01f && a < 0.2f && _motionPhase == 3)
+                {
+                    float taperRatio = Math.Max(a / 0.2f, 0.01f);
+                    effectiveRate *= taperRatio;
+                }
+            }
+
+            // Torque 5 ≈ unrestricted relative to tuning rate; lower slows; higher allows faster catch-up.
+            float torqueScale = Math.Clamp(torque / 5f, 0.05f, 2f);
+            float step = effectiveRate * torqueScale * dt;
+
+            switch (_motionPhase)
+            {
+                case 0: // closed hold
+                    if (latch) _motionAmount = 0f;
+                    _phaseHold += dt;
+                    if (_phaseHold >= 0.4f)
+                    {
+                        if (IsBothDir())
+                            _bothFlip = -_bothFlip;
+                        UpdateMotionSign();
+                        _motionPhase = 1;
+                        _phaseHold = 0f;
+                    }
+                    break;
+                case 1: // opening → 1
+                    _motionAmount = Math.Min(1f, _motionAmount + step);
+                    if (_motionAmount >= 0.999f)
+                    {
+                        _motionAmount = 1f;
+                        _motionPhase = 2;
+                        _phaseHold = 0f;
+                    }
+                    break;
+                case 2: // open hold
+                    _phaseHold += dt;
+                    if (_phaseHold >= OpenHoldSeconds())
+                    {
+                        _motionPhase = 3;
+                        _phaseHold = 0f;
+                    }
+                    break;
+                default: // closing → 0
+                    _motionAmount = Math.Max(0f, _motionAmount - step);
+                    if (_motionAmount <= 0.001f)
+                    {
+                        _motionAmount = 0f;
+                        _motionPhase = 0;
+                        _phaseHold = 0f;
+                    }
+                    else if (latch && _motionAmount < 0.05f)
+                    {
+                        // Latch snap near shut
+                        _motionAmount = 0f;
+                        _motionPhase = 0;
+                        _phaseHold = 0f;
+                    }
+                    break;
+            }
         }
 
         private void GetMeshExtents(out float minX, out float minY, out float minZ, out float maxX, out float maxY, out float maxZ)
@@ -564,7 +677,17 @@ namespace CodeWalker.DoorEditor.Controls
                     ty = ty1;
                     break;
                 }
-                case "7": // Normal hinged — physics/push only, no motion preview
+                case "7": // Normal hinged — swing around GTA Z (Three Y)
+                {
+                    float ang = -sign * amount * OpenAngleRad();
+                    float c = MathF.Cos(ang), s = MathF.Sin(ang);
+                    // Rotate in GTA XY → Three (tx, tz) with tz = -y
+                    float tx1 = tx * c - tz * s;
+                    float tz1 = tx * s + tz * c;
+                    tx = tx1;
+                    tz = tz1;
+                    break;
+                }
                 default:
                     return;
             }
@@ -739,16 +862,53 @@ namespace CodeWalker.DoorEditor.Controls
                 g.FillEllipse(core, offsetPt.X - 5, offsetPt.Y - 5, 10, 10);
 
             float radius = Math.Max(0.35f, 0.9f * Math.Abs(t.AutoOpenRadiusModifier <= 0 ? 1f : t.AutoOpenRadiusModifier));
-            DrawCircleXY(g, oxf, oyf, ozf, radius, cx, cy, scale, midX, midY, midZ, Color.FromArgb(160, AppTheme.OffsetGizmo));
+            // When using a custom trigger box as the auto-open volume, dim the sphere.
+            int sphereAlpha = t.UseAutoOpenTriggerBox && t.CustomTriggerBox && HasTriggerBoxData(t) ? 70 : 160;
+            DrawCircleXY(g, oxf, oyf, ozf, radius, cx, cy, scale, midX, midY, midZ, Color.FromArgb(sphereAlpha, AppTheme.OffsetGizmo));
+
+            // Cosine cone: threshold = cos(half-angle from forward). -1 = full circle (no wedge).
+            float cosTh = t.AutoOpenCosineAngleBetweenThreshold;
+            if (cosTh > -0.999f)
+            {
+                float half = MathF.Acos(Math.Clamp(cosTh, -1f, 1f));
+                DrawCosineWedge(g, oxf, oyf, ozf, radius, half, cx, cy, scale, midX, midY, midZ);
+            }
 
             using var labelBrush = new SolidBrush(AppTheme.OffsetGizmo);
             using var bg = new SolidBrush(Color.FromArgb(180, 12, 14, 20));
             string line1 = "Offset";
             string line2 = $"({oxf:0.##}, {oyf:0.##}, {ozf:0.##})";
-            var sz = g.MeasureString(line2, AppTheme.MonoFont);
-            g.FillRectangle(bg, offsetPt.X + 8, offsetPt.Y - 16, Math.Max(sz.Width, 48) + 8, 28);
+            string line3 = $"r×{t.AutoOpenRadiusModifier:0.##}  cos {cosTh:0.##}";
+            var sz = g.MeasureString(line3, AppTheme.MonoFont);
+            g.FillRectangle(bg, offsetPt.X + 8, offsetPt.Y - 16, Math.Max(sz.Width, 48) + 8, 40);
             g.DrawString(line1, AppTheme.SmallFont, labelBrush, offsetPt.X + 10, offsetPt.Y - 14);
             g.DrawString(line2, AppTheme.MonoFont, labelBrush, offsetPt.X + 10, offsetPt.Y);
+            g.DrawString(line3, AppTheme.MonoFont, labelBrush, offsetPt.X + 10, offsetPt.Y + 12);
+        }
+
+        /// <summary>
+        /// Vehicle approach cone in door XY (forward = +Y), half-angle from AutoOpenCosineAngleBetweenThreshold.
+        /// </summary>
+        private void DrawCosineWedge(Graphics g, float ox, float oy, float oz, float radius, float halfAngle,
+            float cx, float cy, float scale, float midX, float midY, float midZ)
+        {
+            // Forward +Y; wedge from π/2−half to π/2+half in XY polar (0 = +X).
+            float mid = MathF.PI / 2f;
+            const int segs = 24;
+            var pts = new PointF[segs + 2];
+            pts[0] = Project(ox, oy, oz, cx, cy, scale, midX, midY, midZ);
+            for (int i = 0; i <= segs; i++)
+            {
+                float a = mid - halfAngle + (2f * halfAngle) * (i / (float)segs);
+                pts[i + 1] = Project(
+                    ox + MathF.Cos(a) * radius,
+                    oy + MathF.Sin(a) * radius,
+                    oz, cx, cy, scale, midX, midY, midZ);
+            }
+            using var fill = new SolidBrush(Color.FromArgb(36, AppTheme.OffsetGizmo));
+            using var pen = new Pen(Color.FromArgb(200, AppTheme.OffsetGizmo), 1.4f);
+            g.FillPolygon(fill, pts);
+            g.DrawPolygon(pen, pts);
         }
 
         private void DrawTriggerBox(Graphics g, float cx, float cy, float scale, float midX, float midY, float midZ, DoorTuningParams t)
@@ -878,12 +1038,26 @@ namespace CodeWalker.DoorEditor.Controls
             using var labelBrush = new SolidBrush(AppTheme.PedGizmo);
             using var bg = new SolidBrush(Color.FromArgb(180, 12, 14, 20));
             string label = $"Ped {PedHeight:0.0}m";
-            bool inside = IsPedInsideTrigger(px, py, pz);
+            bool insideBox = IsPedInsideTrigger(px, py, pz);
+            bool insideVol = IsPedInsideAutoOpenVolume(px, py, pz);
             if (_tuning != null && _tuning.CustomTriggerBox && HasTriggerBoxData(_tuning))
-                label += inside ? " · IN box" : " · OUT box";
+                label += insideBox ? " · IN box" : " · OUT box";
+            else if (_tuning != null)
+                label += insideVol ? " · IN vol" : " · OUT vol";
             var sz = g.MeasureString(label, AppTheme.SmallFont);
             g.FillRectangle(bg, head.X + 10, head.Y - 18, sz.Width + 8, 16);
             g.DrawString(label, AppTheme.SmallFont, labelBrush, head.X + 12, head.Y - 16);
+        }
+
+        private bool IsPedInsideAutoOpenVolume(float px, float py, float pz)
+        {
+            if (_tuning == null) return false;
+            float ox = _tuning.AutoOpenVolumeOffsetX;
+            float oy = _tuning.AutoOpenVolumeOffsetY;
+            float oz = _tuning.AutoOpenVolumeOffsetZ;
+            float r = Math.Max(0.35f, 0.9f * Math.Abs(_tuning.AutoOpenRadiusModifier <= 0 ? 1f : _tuning.AutoOpenRadiusModifier));
+            float dx = px - ox, dy = py - oy, dz = (pz + PedHeight * 0.5f) - oz;
+            return dx * dx + dy * dy + dz * dz <= r * r;
         }
 
         private bool IsPedInsideTrigger(float px, float py, float pz)
@@ -922,10 +1096,10 @@ namespace CodeWalker.DoorEditor.Controls
             g.FillRectangle(back, 8, Height - 94, 250, 86);
             int x = 12, y = Height - 86;
             DrawLegendItem(g, x, y, AppTheme.DoorEdge, _mesh != null ? "YDR mesh (hinge = yellow)" : "Door placeholder");
-            DrawLegendItem(g, x, y + 16, AppTheme.OffsetGizmo, "AutoOpenVolumeOffset + radius");
+            DrawLegendItem(g, x, y + 16, AppTheme.OffsetGizmo, "AutoOpen offset / radius / cosine");
             DrawLegendItem(g, x, y + 32, AppTheme.TriggerGizmo, "TriggerBoxMinMax");
-            DrawLegendItem(g, x, y + 48, AppTheme.PedGizmo, "Reference ped 1.8 m (IN/OUT box)");
-            DrawLegendItem(g, x, y + 64, AppTheme.Faint, "Scroll zoom · dbl-click reset");
+            DrawLegendItem(g, x, y + 48, AppTheme.PedGizmo, "Reference ped 1.8 m (IN/OUT)");
+            DrawLegendItem(g, x, y + 64, AppTheme.Faint, "Edits live-drive rate·angle·torque·latch");
         }
 
         private static void DrawLegendItem(Graphics g, int x, int y, Color color, string text)
@@ -948,6 +1122,25 @@ namespace CodeWalker.DoorEditor.Controls
             using var brush = new SolidBrush(AppTheme.Faint);
             g.DrawString(mode, AppTheme.SmallFont, brush, Width - 160, 10);
             g.DrawString(_statusText, AppTheme.SmallFont, brush, 10, 10);
+
+            if (_tuning == null || !UsesMotionPreview(_specialAttribute))
+                return;
+
+            float limit = _tuning.RotationLimitAngle;
+            string ang = limit > 0f ? $"{limit:0.#}°" : "90° def";
+            string phase = _motionPhase switch
+            {
+                0 => "closed",
+                1 => "opening",
+                2 => "open",
+                _ => "closing"
+            };
+            string line =
+                $"anim {phase} {_motionAmount:0%}  ·  rate {_tuning.AutoOpenRate:0.###}  ·  torque {_tuning.TorqueAngularVelocityLimit:0.##}  ·  {ang}  ·  mass×{_tuning.MassMultiplier:0.##}";
+            if (_tuning.AutoOpenCloseRateTaper) line += "  ·  taper";
+            if (_tuning.ShouldLatchShut) line += "  ·  latch";
+            if (_tuning.BreakableByVehicle) line += $"  ·  break@{_tuning.BreakingImpulse:0.#}";
+            g.DrawString(line, AppTheme.MonoFont, brush, 10, 26);
         }
     }
 }

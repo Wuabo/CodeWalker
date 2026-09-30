@@ -43,11 +43,16 @@ namespace CodeWalker.DoorEditor
         private ThemedComboBox? _motionCombo;
 
         private readonly ThemedNumeric _offX = Num(), _offY = Num(), _offZ = Num();
-        private readonly ThemedNumeric _radius = Num(1), _rate = Num(1), _cosine = Num();
+        private readonly ThemedNumeric _radius = Num(1, 0, 5, 0.05m, 2);
+        private readonly ThemedNumeric _rate = Num(0.5m, 0, 5, 0.01m, 2);
+        private readonly ThemedNumeric _cosine = Num(-1, -1, 1, 0.05m, 3);
         private readonly ThemedNumeric _tMinX = Num(), _tMinY = Num(), _tMinZ = Num();
         private readonly ThemedNumeric _tMaxX = Num(), _tMaxY = Num(), _tMaxZ = Num();
-        private readonly ThemedNumeric _breakImpulse = Num(), _mass = Num(1), _weapon = Num(1);
-        private readonly ThemedNumeric _rotLimit = Num(), _torque = Num();
+        private readonly ThemedNumeric _breakImpulse = Num(0, 0, 100000, 1000, 0);
+        private readonly ThemedNumeric _mass = Num(1, 0.01m, 100, 0.01m, 2);
+        private readonly ThemedNumeric _weapon = Num(1, 0, 100, 0.01m, 2);
+        private readonly ThemedNumeric _rotLimit = Num(0, 0, 180, 1, 0);
+        private readonly ThemedNumeric _torque = Num(5, 0, 10, 0.01m, 2);
         private readonly ThemedCheckBox _closeTaper = new() { Text = "AutoOpenCloseRateTaper" };
         private readonly ThemedCheckBox _useTrigger = new() { Text = "UseAutoOpenTriggerBox" };
         private readonly ThemedCheckBox _customTrigger = new() { Text = "CustomTriggerBox" };
@@ -55,6 +60,10 @@ namespace CodeWalker.DoorEditor
         private readonly ThemedCheckBox _latch = new() { Text = "ShouldLatchShut" };
         private readonly ThemedComboBox _rotDir = new() { Width = 240 };
         private readonly List<ThemedCheckBox> _flagChecks = new();
+        private readonly ToolTip _tips = new() { AutoPopDelay = 12000, InitialDelay = 400, ReshowDelay = 200 };
+        private Control? _triggerMinSection;
+        private Control? _triggerMaxSection;
+        private Control? _rotDirSection;
 
         private RpfManager? _rpfMan;
         private Dictionary<string, RpfFileEntry>? _ydrByName;
@@ -86,10 +95,58 @@ namespace CodeWalker.DoorEditor
             foreach (var f in KnownFlags)
                 _flagChecks.Add(new ThemedCheckBox { Text = f });
             _rotDir.Items.AddRange(RotDirs);
+            AttachFieldTips();
 
             BuildUi();
             WireEvents();
+            UpdateDependentFieldState();
             Shown += async (_, _) => await InitGameAsync();
+        }
+
+        private void AttachFieldTips()
+        {
+            void Tip(Control c, string text) => _tips.SetToolTip(c, text);
+
+            Tip(_radius, "Multiplies auto-open radius. 1.0 ≈ door width. Engine range 0–5.");
+            Tip(_rate, "Open/close speed = 1/time. 0.25 ≈ 4 seconds. Engine range 0–5. Default 0.5.");
+            Tip(_cosine, "Cosine threshold for vehicles approaching the door (−1…1). −1 = accept all. Pedestrians ignore this.");
+            Tip(_closeTaper, "Slow the rate near full open/close.");
+            Tip(_useTrigger, "Use a box volume instead of the default sphere.");
+            Tip(_customTrigger, "Use TriggerBoxMinMax (requires UseAutoOpenTriggerBox).");
+            Tip(_breakable, "Door may break when hit by a vehicle.");
+            Tip(_breakImpulse, "Impulse magnitude required to break the constraint.");
+            Tip(_latch, "Latch the door shut when it reaches closed.");
+            Tip(_mass, "Mass multiplier. Engine min 0.01.");
+            Tip(_weapon, "Weapon impulse multiplier.");
+            Tip(_rotLimit, "Open angle override in degrees (0–180). 0 = engine default for door type (~90° garage/std).");
+            Tip(_torque, "Angular velocity clamp. Default 5. 0 freezes rotation — door will not open.");
+            Tip(_rotDir, "Standard hinged doors only. Garage/slide/barrier ignore this.");
+            Tip(_offX, "Local-space offset of the auto-open volume.");
+            Tip(_offY, "Local-space offset of the auto-open volume.");
+            Tip(_offZ, "Local-space offset of the auto-open volume. Garage often uses negative Z.");
+            Tip(_tMinX, "Custom trigger box min (door-local). Only used with CustomTriggerBox.");
+            Tip(_tMinY, "Custom trigger box min (door-local). Y is usually approach depth for garages.");
+            Tip(_tMinZ, "Custom trigger box min (door-local). Prefer z < 0 so the ped on the ground is inside.");
+            Tip(_tMaxX, "Custom trigger box max (door-local).");
+            Tip(_tMaxY, "Custom trigger box max (door-local).");
+            Tip(_tMaxZ, "Custom trigger box max (door-local).");
+
+            foreach (var c in _flagChecks)
+            {
+                Tip(c, c.Text switch
+                {
+                    "DontCloseWhenTouched" => "Standard doors: don't force target ratio to 0 on impact. Useful on garages so touching doesn't slam shut.",
+                    "AutoOpensForSPVehicleWithPedsOnly" => "SP: auto-open for vehicles that have allowed peds.",
+                    "AutoOpensForSPPlayerPedsOnly" => "SP: auto-open for player peds (on foot or in vehicle).",
+                    "AutoOpensForMPVehicleWithPedsOnly" => "MP: only while in a vehicle. Combined with MPPlayerPedsOnly blocks foot players.",
+                    "AutoOpensForMPPlayerPedsOnly" => "MP: auto-open for player peds. Use this (alone) for foot players in FiveM.",
+                    "DelayDoorClosingForPlayer" => "Standard doors: delay close after the player runs into them.",
+                    "AutoOpensForAllVehicles" => "Any vehicle triggers auto-open (skips ped seat checks).",
+                    "IgnoreOpenDoorTaskEdgeLerp" => "Skip door-edge extension in CTaskOpenDoor.",
+                    "AutoOpensForLawEnforcement" => "Always open for law-enforcement peds.",
+                    _ => c.Text
+                });
+            }
         }
 
         private async Task InitGameAsync()
@@ -386,6 +443,7 @@ namespace CodeWalker.DoorEditor
                     _loadingUi = true;
                     _motionCombo.SelectedIndex = i;
                     _loadingUi = false;
+                    UpdateDependentFieldState();
                     return;
                 }
             }
@@ -550,17 +608,20 @@ namespace CodeWalker.DoorEditor
                 Row("Open rate", _rate),
                 Row("Cosine angle threshold", _cosine),
                 _closeTaper, _useTrigger, _customTrigger)));
-            Add(Section("Trigger box min (− side)", Row3("X", _tMinX, "Y", _tMinY, "Z", _tMinZ)));
-            Add(Section("Trigger box max (+ side)", Row3("X", _tMaxX, "Y", _tMaxY, "Z", _tMaxZ)));
+            _triggerMinSection = Section("Trigger box min (− side)", Row3("X", _tMinX, "Y", _tMinY, "Z", _tMinZ));
+            _triggerMaxSection = Section("Trigger box max (+ side)", Row3("X", _tMaxX, "Y", _tMaxY, "Z", _tMaxZ));
+            Add(_triggerMinSection);
+            Add(_triggerMaxSection);
             Add(Section("Physics", Col(
                 _breakable,
                 Row("Breaking impulse", _breakImpulse),
                 _latch,
                 Row("Mass multiplier", _mass),
                 Row("Weapon impulse multiplier", _weapon),
-                Row("Rotation limit angle", _rotLimit),
+                Row("Rotation limit angle (°)", _rotLimit),
                 Row("Torque angular velocity limit", _torque))));
-            Add(Section("Rotation direction", Row("StdDoorRotDir", _rotDir)));
+            _rotDirSection = Section("Rotation direction (std doors only)", Row("StdDoorRotDir", _rotDir));
+            Add(_rotDirSection);
 
             var flagsPanel = new FlowLayoutPanel
             {
@@ -574,6 +635,7 @@ namespace CodeWalker.DoorEditor
             Add(Section("Flags", flagsPanel));
 
             _editorHost.Controls.Add(root);
+            UpdateDependentFieldState();
         }
 
         private void WireEvents()
@@ -583,6 +645,7 @@ namespace CodeWalker.DoorEditor
             void MarkDirty(object? s, EventArgs e)
             {
                 if (!_loadingUi) PushUiToTuning();
+                UpdateDependentFieldState();
             }
             foreach (Control c in new Control[]
                      {
@@ -598,6 +661,49 @@ namespace CodeWalker.DoorEditor
             }
             foreach (var f in _flagChecks)
                 f.CheckedChanged += MarkDirty;
+
+            _useTrigger.CheckedChanged += (_, _) =>
+            {
+                if (_loadingUi) return;
+                if (!_useTrigger.Checked && _customTrigger.Checked)
+                    _customTrigger.Checked = false;
+            };
+            _customTrigger.CheckedChanged += (_, _) =>
+            {
+                if (_loadingUi) return;
+                if (_customTrigger.Checked && !_useTrigger.Checked)
+                    _useTrigger.Checked = true;
+            };
+
+            if (_motionCombo != null)
+                _motionCombo.SelectedIndexChanged += (_, _) => UpdateDependentFieldState();
+        }
+
+        private void UpdateDependentFieldState()
+        {
+            bool custom = _customTrigger.Checked;
+            bool useBox = _useTrigger.Checked || custom;
+            if (_triggerMinSection != null) _triggerMinSection.Enabled = custom;
+            if (_triggerMaxSection != null) _triggerMaxSection.Enabled = custom;
+            _tMinX.Enabled = _tMinY.Enabled = _tMinZ.Enabled = custom;
+            _tMaxX.Enabled = _tMaxY.Enabled = _tMaxZ.Enabled = custom;
+            _useTrigger.Enabled = true;
+            // Custom implies use-box visually
+            if (custom && !useBox) { /* already forced in event */ }
+
+            // StdDoorRotDir only applies to normal hinged doors (attr 7)
+            bool stdDoor = true;
+            if (_motionCombo?.SelectedItem is string s)
+            {
+                var id = s.Split('—', '-', '–')[0].Trim();
+                stdDoor = id == "7";
+            }
+            else if (!string.IsNullOrEmpty(_preview.SpecialAttribute))
+            {
+                stdDoor = _preview.SpecialAttribute == "7";
+            }
+            if (_rotDirSection != null) _rotDirSection.Enabled = stdDoor;
+            _rotDir.Enabled = stdDoor;
         }
 
         private void OnMappingSelected()
@@ -922,26 +1028,59 @@ namespace CodeWalker.DoorEditor
 
         private bool WarnIfBadTriggerBoxes()
         {
-            var bad = new List<string>();
+            return ConfirmExportIssues(CollectTuningIssues());
+        }
+
+        private List<string> CollectTuningIssues()
+        {
+            var issues = new List<string>();
             foreach (var nt in _document.NamedTunings)
             {
                 var t = nt.Tuning;
-                if (t == null || !t.CustomTriggerBox) continue;
-                // Negatives on min are normal (box extends both ways). Bad = min > max on same axis.
-                bool inverted =
-                    t.TriggerBoxMinX > t.TriggerBoxMaxX ||
-                    t.TriggerBoxMinY > t.TriggerBoxMaxY ||
-                    t.TriggerBoxMinZ > t.TriggerBoxMaxZ;
-                if (inverted)
-                    bad.Add($"{nt.Name}: min must be <= max per axis (e.g. min.x=-3 max.x=3, not swapped)");
+                if (t == null) continue;
+                var name = string.IsNullOrWhiteSpace(nt.Name) ? "(unnamed)" : nt.Name;
+
+                if (t.CustomTriggerBox && !t.UseAutoOpenTriggerBox)
+                    issues.Add($"{name}: CustomTriggerBox requires UseAutoOpenTriggerBox (engine assert)");
+
+                if (t.CustomTriggerBox)
+                {
+                    bool inverted =
+                        t.TriggerBoxMinX > t.TriggerBoxMaxX ||
+                        t.TriggerBoxMinY > t.TriggerBoxMaxY ||
+                        t.TriggerBoxMinZ > t.TriggerBoxMaxZ;
+                    if (inverted)
+                        issues.Add($"{name}: TriggerBox min must be <= max per axis");
+                }
+
+                if (t.TorqueAngularVelocityLimit <= 0f)
+                    issues.Add($"{name}: TorqueAngularVelocityLimit is 0 — door cannot rotate (engine default is 5)");
+
+                if (t.AutoOpenCosineAngleBetweenThreshold > 0.999f)
+                    issues.Add($"{name}: Cosine threshold near 1 is extremely strict for vehicles");
+
+                var flags = t.Flags ?? [];
+                bool mpPlayer = flags.Contains("AutoOpensForMPPlayerPedsOnly");
+                bool mpVehicle = flags.Contains("AutoOpensForMPVehicleWithPedsOnly");
+                if (mpPlayer && mpVehicle)
+                    issues.Add($"{name}: MPPlayerPedsOnly + MPVehicleWithPedsOnly blocks foot players in MP (engine PedTriggersAutoOpen)");
+
+                bool spPlayer = flags.Contains("AutoOpensForSPPlayerPedsOnly");
+                bool spVehicle = flags.Contains("AutoOpensForSPVehicleWithPedsOnly");
+                if (spPlayer && spVehicle)
+                    issues.Add($"{name}: SPPlayerPedsOnly + SPVehicleWithPedsOnly blocks foot players in SP");
             }
-            if (bad.Count == 0) return true;
+            return issues;
+        }
+
+        private bool ConfirmExportIssues(List<string> issues)
+        {
+            if (issues.Count == 0) return true;
             var msg =
-                "CustomTriggerBox AABB has min > max on an axis (values swapped).\n" +
-                "Negative mins are fine; each axis needs min <= max:\n\n• " +
-                string.Join("\n• ", bad) +
+                "Potential doortuning issues (from GTA engine rules):\n\n• " +
+                string.Join("\n• ", issues) +
                 "\n\nExport anyway?";
-            return MessageBox.Show(this, msg, "Bad trigger boxes", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
+            return MessageBox.Show(this, msg, "Door tuning checks", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
         }
 
         private void RefreshLists()
@@ -1029,6 +1168,7 @@ namespace CodeWalker.DoorEditor
                 c.Checked = flags.Contains(c.Text);
             _loadingUi = false;
             UpdatePreviewFromSelection();
+            UpdateDependentFieldState();
         }
 
         private void PushUiToTuning()
@@ -1171,16 +1311,23 @@ namespace CodeWalker.DoorEditor
             return b;
         }
 
-        private static ThemedNumeric Num(decimal value = 0)
+        private static ThemedNumeric Num(decimal value = 0, decimal min = -100000, decimal max = 100000, decimal increment = 0.01m, int decimals = 6)
         {
-            return new ThemedNumeric { Value = value };
+            return new ThemedNumeric
+            {
+                Value = value,
+                Minimum = min,
+                Maximum = max,
+                Increment = increment,
+                DecimalPlaces = decimals
+            };
         }
 
-        private static decimal Clamp(float v)
+        private static decimal Clamp(float v, decimal min = -100000, decimal max = 100000)
         {
             var d = (decimal)v;
-            if (d < -100000) return -100000;
-            if (d > 100000) return 100000;
+            if (d < min) return min;
+            if (d > max) return max;
             return d;
         }
 
