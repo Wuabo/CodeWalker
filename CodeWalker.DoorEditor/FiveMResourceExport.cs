@@ -1,84 +1,46 @@
 using System;
 using System.IO;
-using System.Reflection;
 using System.Text;
 
 namespace CodeWalker.DoorEditor
 {
     /// <summary>
-    /// Writes a FiveM replace_level_meta resource folder:
-    /// doortuning.ymt (Meta XML), fxmanifest.lua, gta5.meta — no companion .xml.
+    /// FiveM Meta XML doortuning .ymt only (no fxmanifest / gta5.meta).
     /// </summary>
     public static class FiveMResourceExport
     {
-        public static void WriteResourceFolder(string folder, DoorTuningDocument document, string? resourceName = null)
+        public static void WriteYmt(string path, DoorTuningDocument document)
         {
-            if (string.IsNullOrWhiteSpace(folder))
-                throw new ArgumentException("Folder is required.", nameof(folder));
-            Directory.CreateDirectory(folder);
-
-            var name = string.IsNullOrWhiteSpace(resourceName)
-                ? Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-                : resourceName.Trim();
-            if (string.IsNullOrWhiteSpace(name))
-                name = "wuabo_meta";
-
-            File.WriteAllText(Path.Combine(folder, "doortuning.ymt"), document.ToXml(), new UTF8Encoding(false));
-            File.WriteAllText(Path.Combine(folder, "fxmanifest.lua"), BuildFxManifest(), new UTF8Encoding(false));
-            File.WriteAllText(Path.Combine(folder, "gta5.meta"), BuildGta5Meta(name), new UTF8Encoding(false));
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentException("Path is required.", nameof(path));
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            File.WriteAllText(path, document.ToXml(), new UTF8Encoding(false));
         }
 
-        private static string BuildFxManifest() =>
-            """
-            fx_version 'cerulean'
-            game 'gta5'
-
-            replace_level_meta 'gta5'
-
-            files {
-                'gta5.meta',
-                'doortuning.ymt'
-            }
-            """;
-
-        private static string BuildGta5Meta(string resourceName)
+        /// <summary>
+        /// Suggest a .ymt file name from an opened/source path (keeps basename when possible).
+        /// </summary>
+        public static string SuggestYmtFileName(string? sourcePath)
         {
-            var template = LoadGta5Template();
-            var doorPath = $"resources:/{resourceName}/doortuning";
+            if (string.IsNullOrWhiteSpace(sourcePath))
+                return "doortuning.ymt";
 
-            // Replace any resources:/…/doortuning filename with this resource.
-            const string marker = "resources:/";
-            var start = template.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            while (start >= 0)
-            {
-                var end = template.IndexOf("</filename>", start, StringComparison.OrdinalIgnoreCase);
-                if (end < 0) break;
-                var path = template.Substring(start, end - start);
-                if (path.Contains("doortuning", StringComparison.OrdinalIgnoreCase))
-                    return template.Substring(0, start) + doorPath + template.Substring(end);
-                start = template.IndexOf(marker, end, StringComparison.OrdinalIgnoreCase);
-            }
+            var name = Path.GetFileName(sourcePath.Trim());
+            if (string.IsNullOrEmpty(name))
+                return "doortuning.ymt";
 
-            return template;
-        }
+            if (name.EndsWith(".ymt.pso.xml", StringComparison.OrdinalIgnoreCase))
+                return name[..^".pso.xml".Length]; // foo.ymt.pso.xml → foo.ymt
+            if (name.EndsWith(".ymt.xml", StringComparison.OrdinalIgnoreCase))
+                return name[..^".xml".Length]; // foo.ymt.xml → foo.ymt
+            if (name.EndsWith(".ymt", StringComparison.OrdinalIgnoreCase))
+                return name;
+            if (name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                return Path.GetFileNameWithoutExtension(name) + ".ymt";
 
-        private static string LoadGta5Template()
-        {
-            var baseDir = AppContext.BaseDirectory;
-            var candidates = new[]
-            {
-                Path.Combine(baseDir, "Templates", "gta5.meta"),
-                Path.Combine(baseDir, "gta5.meta"),
-                Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? baseDir, "Templates", "gta5.meta"),
-            };
-            foreach (var c in candidates)
-            {
-                if (File.Exists(c))
-                    return File.ReadAllText(c);
-            }
-
-            throw new FileNotFoundException(
-                "FiveM export template Templates/gta5.meta was not found next to the app.");
+            return Path.GetFileNameWithoutExtension(name) + ".ymt";
         }
     }
 }

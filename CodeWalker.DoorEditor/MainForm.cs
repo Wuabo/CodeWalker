@@ -949,8 +949,8 @@ namespace CodeWalker.DoorEditor
                 File.WriteAllBytes(dlg.FileName, bytes);
                 SetStatus($"Exported PSO {bytes.Length} bytes → {dlg.FileName}");
                 MessageBox.Show(this,
-                    "Exported binary PSO doortuning.ymt only (no XML).\n\n" +
-                    "For FiveM use Export FiveM — binary PSO does not work with replace_level_meta.",
+                    "Exported binary PSO .ymt only (no XML).\n\n" +
+                    "For FiveM Meta XML use Export FiveM…",
                     "Export YMT", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -960,30 +960,40 @@ namespace CodeWalker.DoorEditor
         }
 
         /// <summary>
-        /// FiveM replace_level_meta: Meta XML doortuning.ymt + fxmanifest.lua + gta5.meta (no companion .xml).
+        /// FiveM Meta XML .ymt only — user picks the file name (defaults to opened source name).
         /// </summary>
         private void ExportFiveM()
         {
             PushUiToTuning();
             if (!EnsureExportable()) return;
             if (!WarnIfBadTriggerBoxes()) return;
-            using var dlg = new FolderBrowserDialog
+
+            var suggested = FiveMResourceExport.SuggestYmtFileName(_sourcePath);
+            using var dlg = new SaveFileDialog
             {
-                Description = "Choose FiveM resource folder (writes doortuning.ymt + fxmanifest.lua + gta5.meta)",
-                UseDescriptionForTitle = true,
-                ShowNewFolderButton = true
+                Title = "Export FiveM Meta XML .ymt",
+                Filter = "YMT|*.ymt|All|*.*",
+                FileName = suggested,
+                OverwritePrompt = true
             };
+            if (!string.IsNullOrWhiteSpace(_sourcePath))
+            {
+                var dir = Path.GetDirectoryName(_sourcePath);
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    dlg.InitialDirectory = dir;
+            }
+
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             try
             {
-                FiveMResourceExport.WriteResourceFolder(dlg.SelectedPath, _document);
-                var resName = Path.GetFileName(dlg.SelectedPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                SetStatus("Exported FiveM resource → " + dlg.SelectedPath);
+                var path = dlg.FileName;
+                if (!path.EndsWith(".ymt", StringComparison.OrdinalIgnoreCase))
+                    path += ".ymt";
+                FiveMResourceExport.WriteYmt(path, _document);
+                _sourcePath = path;
+                SetStatus("Exported FiveM Meta XML → " + path);
                 MessageBox.Show(this,
-                    "Exported FiveM resource (no companion XML):\n" +
-                    $"• doortuning.ymt (Meta XML)\n• fxmanifest.lua\n• gta5.meta\n\n" +
-                    $"Folder: {dlg.SelectedPath}\nResource name used in gta5.meta: {resName}\n\n" +
-                    "ensure this resource is started; .ytyp door needs specialAttribute (5=garage…).",
+                    "Exported Meta XML .ymt only (no fxmanifest / gta5.meta):\n" + path,
                     "Export FiveM", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
