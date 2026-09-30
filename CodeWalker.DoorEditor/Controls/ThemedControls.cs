@@ -155,6 +155,17 @@ namespace CodeWalker.DoorEditor.Controls
             }
         }
 
+        public bool ReadOnly
+        {
+            get => _box.ReadOnly;
+            set
+            {
+                _box.ReadOnly = value;
+                _box.ForeColor = value ? AppTheme.Muted : AppTheme.Bright;
+                Invalidate();
+            }
+        }
+
         public event EventHandler? ValueChanged;
 
         public ThemedNumeric()
@@ -314,6 +325,20 @@ namespace CodeWalker.DoorEditor.Controls
             Invalidate();
         }
 
+        public void ClearItems()
+        {
+            _items.Clear();
+            _selectedIndex = -1;
+            CloseDrop();
+            Invalidate();
+        }
+
+        public void AddItem(object item)
+        {
+            _items.Add(item);
+            Invalidate();
+        }
+
         protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
 
@@ -414,6 +439,8 @@ namespace CodeWalker.DoorEditor.Controls
             private readonly ThemedComboBox _owner;
             public ObjectCollection(ThemedComboBox owner) => _owner = owner;
             public void AddRange(object[] items) => _owner.AddRange(items);
+            public void Add(object item) => _owner.AddItem(item);
+            public void Clear() => _owner.ClearItems();
             public int Count => _owner._items.Count;
             public object? this[int index] => _owner._items[index];
         }
@@ -813,6 +840,17 @@ namespace CodeWalker.DoorEditor.Controls
 #pragma warning restore CS8765
         }
 
+        public bool ReadOnly
+        {
+            get => _box.ReadOnly;
+            set
+            {
+                _box.ReadOnly = value;
+                _box.ForeColor = value ? AppTheme.Muted : AppTheme.Bright;
+                Invalidate();
+            }
+        }
+
         public ThemedTextBox()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
@@ -827,6 +865,7 @@ namespace CodeWalker.DoorEditor.Controls
                 Width = 100,
                 Height = 16
             };
+            _box.TextChanged += (_, _) => OnTextChanged(EventArgs.Empty);
             _box.GotFocus += (_, _) => Invalidate();
             _box.LostFocus += (_, _) => Invalidate();
             Controls.Add(_box);
@@ -835,6 +874,18 @@ namespace CodeWalker.DoorEditor.Controls
 
         public void SelectAll() => _box.SelectAll();
         public new void Focus() => _box.Focus();
+
+        protected override void OnClick(EventArgs e)
+        {
+            base.OnClick(e);
+            _box.Focus();
+        }
+
+        protected override void OnGotFocus(EventArgs e)
+        {
+            base.OnGotFocus(e);
+            _box.Focus();
+        }
 
         protected override void OnResize(EventArgs e)
         {

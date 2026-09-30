@@ -217,6 +217,8 @@ namespace CodeWalker.DoorEditor
             toolbar.Items.Add(ToolBtn("Export YMT", (_, _) => ExportYmt()));
             toolbar.Items.Add(ToolBtn("Export FiveM…", (_, _) => ExportFiveM()));
             toolbar.Items.Add(ToolBtn("Export XML", (_, _) => ExportXml()));
+            toolbar.Items.Add(new ToolStripSeparator());
+            toolbar.Items.Add(ToolBtn("Door Audio…", (_, _) => OpenDoorAudio()));
 
             var status = new StatusStrip
             {
@@ -1000,6 +1002,14 @@ namespace CodeWalker.DoorEditor
             {
                 MessageBox.Show(this, ex.ToString(), "Export FiveM", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void OpenDoorAudio()
+        {
+            using var form = new DoorAudioForm(
+                () => _document.ModelMappings.Select(m => m.ModelName),
+                () => _rpfMan);
+            form.ShowDialog(this);
         }
 
         private void ExportXml()
