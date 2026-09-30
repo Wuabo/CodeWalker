@@ -147,10 +147,40 @@ namespace CodeWalker.DoorEditor
         private Control BuildDoorPane()
         {
             var pane = Pane();
+            var buttons = new TableLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 40,
+                ColumnCount = 2,
+                RowCount = 1,
+                Padding = new Padding(0, 4, 4, 0),
+                BackColor = AppTheme.Window
+            };
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            void AddBtn(string text, Action onClick, bool primary, int col)
+            {
+                var b = new ThemedButton
+                {
+                    Text = text,
+                    Primary = primary,
+                    Dock = DockStyle.Fill,
+                    AutoSize = false,
+                    Margin = new Padding(0, 0, col == 0 ? 4 : 0, 0),
+                    Height = 28
+                };
+                b.Click += (_, _) => onClick();
+                buttons.Controls.Add(b, col, 0);
+            }
+
+            AddBtn("Add door", AddDoor, true, 0);
+            AddBtn("Remove", RemoveDoor, false, 1);
+
+            // Dock order: Fill first, then Bottom, then Top (WinForms lays out reverse Z-order).
             pane.Controls.Add(ListHost(_doorList));
-            pane.Controls.Add(ToolBar(
-                ("Add door", true, AddDoor),
-                ("Remove", false, RemoveDoor)));
+            pane.Controls.Add(buttons);
             pane.Controls.Add(Header("Doors"));
             return pane;
         }
