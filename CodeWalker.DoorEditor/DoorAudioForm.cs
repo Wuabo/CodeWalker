@@ -214,7 +214,7 @@ namespace CodeWalker.DoorEditor
                 form.Controls.Add(c, 1, r);
             }
 
-            Section("Identity", "Exports as d_your_name · DASL link is generated from the model hash.");
+            Section("Identity", "Exports as your_name · link dasl_<jenkins-hash> is generated automatically.");
             Row("Door name", _doorName);
             int prevRow = form.RowCount++;
             form.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -437,7 +437,7 @@ namespace CodeWalker.DoorEditor
                 model = model[2..];
             if (string.IsNullOrEmpty(model))
             {
-                _relPreview.Text = "REL name: d_…";
+                _relPreview.Text = "REL name: …   ·   link dasl_…";
                 return;
             }
             var tmp = new DoorAudioAssignment { ModelName = model };
@@ -681,7 +681,7 @@ namespace CodeWalker.DoorEditor
                 exportDoc.Assignments.AddRange(rows);
                 exportDoc.SaveRelXml(dlg.FileName);
 
-                // CodeWalker needs the sidecar nametable to resolve d_* / DASL_* hashes.
+                // CodeWalker needs the sidecar nametable to resolve model / dasl_* hashes.
                 var nametablePath = DoorAudioDocument.SuggestNameTablePath(dlg.FileName);
                 exportDoc.SaveNameTable(nametablePath);
 

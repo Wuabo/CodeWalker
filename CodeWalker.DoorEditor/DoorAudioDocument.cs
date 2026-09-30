@@ -27,12 +27,16 @@ namespace CodeWalker.DoorEditor
         public uint ModelHash =>
             string.IsNullOrEmpty(NormalizedModel) ? 0u : JenkHash.GenHashLowerInvariant(NormalizedModel);
 
+        /// <summary>DoorAudioSettings &lt;Name&gt; — model archetype only (no d_ prefix).</summary>
         public string SettingsName =>
-            string.IsNullOrEmpty(NormalizedModel) ? string.Empty : "d_" + NormalizedModel;
+            string.IsNullOrEmpty(NormalizedModel) ? string.Empty : NormalizedModel;
 
-        /// <summary>Engine looks up atStringHash("DASL_%08X") with uppercase hex.</summary>
+        /// <summary>
+        /// DoorAudioSettingsLink &lt;Name&gt;: dasl_ + Jenkins hash of the model (hex, no 0x), all lowercase.
+        /// Example: wuabo_storage_g_door → dasl_9a333c1b
+        /// </summary>
         public string LinkName =>
-            ModelHash == 0 ? string.Empty : "DASL_" + ModelHash.ToString("X8", CultureInfo.InvariantCulture);
+            ModelHash == 0 ? string.Empty : "dasl_" + ModelHash.ToString("x8", CultureInfo.InvariantCulture);
     }
 
     /// <summary>One row from availableDoorSound catalog (friendly name → Sounds / TuningParams).</summary>
@@ -309,7 +313,7 @@ namespace CodeWalker.DoorEditor
 
         /// <summary>
         /// CodeWalker-style .nametable: null-separated UTF-8 names (needed so Rel hashes
-        /// like d_* / DASL_* resolve back to strings when opening in CodeWalker).
+        /// like model / dasl_* resolve back to strings when opening in CodeWalker).
         /// </summary>
         public void SaveNameTable(string path)
         {
@@ -350,8 +354,8 @@ namespace CodeWalker.DoorEditor
             foreach (var a in Assignments)
             {
                 if (string.IsNullOrEmpty(a.NormalizedModel)) continue;
-                names.Add(a.SettingsName); // d_model
-                names.Add(a.LinkName);     // DASL_XXXXXXXX (matches Rel export)
+                names.Add(a.SettingsName); // model archetype
+                names.Add(a.LinkName);     // dasl_xxxxxxxx (matches Rel export)
                 AddNameIfUseful(names, a.Sounds);
                 AddNameIfUseful(names, a.TuningParams);
             }
@@ -417,16 +421,20 @@ namespace CodeWalker.DoorEditor
 
         private static string ModelFromSettingsOrLink(string? settingsName, string? linkName)
         {
+            // Legacy exports used d_model as SettingsName; current format is the model itself.
             if (!string.IsNullOrEmpty(settingsName) &&
                 settingsName.StartsWith("d_", StringComparison.OrdinalIgnoreCase) &&
                 settingsName.Length > 2)
                 return settingsName[2..].ToLowerInvariant();
 
+            if (!string.IsNullOrEmpty(settingsName))
+                return settingsName.ToLowerInvariant();
+
             if (!string.IsNullOrEmpty(linkName) &&
-                linkName.StartsWith("DASL_", StringComparison.OrdinalIgnoreCase))
+                linkName.StartsWith("dasl_", StringComparison.OrdinalIgnoreCase))
                 return "model_" + linkName[5..].ToLowerInvariant();
 
-            return (settingsName ?? string.Empty).ToLowerInvariant();
+            return string.Empty;
         }
 
         private static string HashToString(MetaHash h)
