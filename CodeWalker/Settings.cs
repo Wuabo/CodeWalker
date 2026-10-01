@@ -205,6 +205,18 @@ public sealed partial class Settings
         set => SettingsManager.SetBool(nameof(ShowStatusBar), value);
     }
 
+    public bool RenderFog
+    {
+        get => SettingsManager.GetBool(nameof(RenderFog), true);
+        set => SettingsManager.SetBool(nameof(RenderFog), value);
+    }
+
+    public bool RenderParticles
+    {
+        get => SettingsManager.GetBool(nameof(RenderParticles), true);
+        set => SettingsManager.SetBool(nameof(RenderParticles), value);
+    }
+
     public bool WaitForChildren
     {
         get => SettingsManager.GetBool(nameof(WaitForChildren), true);
